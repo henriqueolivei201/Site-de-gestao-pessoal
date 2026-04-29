@@ -4,18 +4,47 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Gestão Pessoal - Metas</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <link rel="stylesheet" href="style.css">
+
 </head>
 <body>
     <div class="app-container">
+        <!-- Overlay Modal -->
+        <div class="modal-overlay" id="modal-overlay">
+            <div class="modal">
+                <h3>Nova Meta</h3>
+                <input type="text" id="meta-input" placeholder="Digite sua meta..." maxlength="100">
+                <div class="prioridade-buttons">
+                    <button class="prioridade-btn alta active" data-prioridade="Alta">Alta</button>
+                    <button class="prioridade-btn media" data-prioridade="Média">Média</button>
+                    <button class="prioridade-btn baixa" data-prioridade="Baixa">Baixa</button>
+                </div>
+                <div class="modal-actions">
+                    <button class="btn-cancelar" id="btn-cancelar">Cancelar</button>
+                    <button class="btn-confirmar" id="btn-confirmar">Adicionar Meta</button>
+                </div>
+            </div>
+        </div>
+
         <!-- Navegação Lateral -->
         <nav class="sidebar">
-            <h2>Visualizações</h2>
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 2rem;">
+                <h2>Visualizações</h2>
+                <div class="theme-toggle-container">
+                    <button class="theme-toggle" id="theme-toggle" title="Alternar tema claro/escuro">
+                        <span class="icon-sun">☀️</span>
+                        <span class="icon-moon">🌙</span>
+                    </button>
+                </div>
+            </div>
             <ul>
                 <li class="nav-item active" data-view="diario">📅 Diário</li>
                 <li class="nav-item" data-view="semanal">📊 Semanal</li>
                 <li class="nav-item" data-view="anual">📈 Anual</li>
+                <li class="nav-item" data-view="estatisticas">📉 Estatísticas</li>
             </ul>
+
         </nav>
 
         <!-- Conteúdo Principal -->
@@ -23,7 +52,7 @@
             <!-- Cabeçalho Principal -->
             <header class="main-header">
                 <div class="header-left">
-                    <h1 id="data-atual">Hoje - 15 de Outubro de 2024</h1>
+                    <h1 id="data-atual">Hoje</h1>
                 </div>
                 <div class="header-right">
                     <button class="btn-nova-meta" id="btn-nova-meta">➕ Nova Meta</button>
@@ -34,16 +63,16 @@
             <section class="goals-section active" id="secao-diario">
                 <h2>Metas Diárias</h2>
                 <div class="goals-container" id="lista-diario">
-                    <!-- Exemplos de itens de meta -->
-                    <article class="goal-item">
-                        <input type="checkbox" class="checkbox-meta" id="meta1">
-                        <label for="meta1" class="goal-text">Estudar React por 2 horas</label>
+                    <!-- Exemplos de itens de meta (opacidade reduzida) -->
+                    <article class="goal-item exemplo">
+                        <input type="checkbox" class="checkbox-meta">
+                        <label class="goal-text">Estudar React por 2 horas</label>
                         <span class="etiqueta-prioridade alta">Alta</span>
                         <button class="btn-excluir" aria-label="Excluir meta">&times;</button>
                     </article>
-                    <article class="goal-item">
-                        <input type="checkbox" class="checkbox-meta" id="meta2">
-                        <label for="meta2" class="goal-text">Fazer exercício físico 30min</label>
+                    <article class="goal-item exemplo">
+                        <input type="checkbox" class="checkbox-meta">
+                        <label class="goal-text">Fazer exercício físico 30min</label>
                         <span class="etiqueta-prioridade media">Média</span>
                         <button class="btn-excluir" aria-label="Excluir meta">&times;</button>
                     </article>
@@ -63,8 +92,28 @@
                     <!-- Metas serão populadas aqui via JavaScript -->
                 </div>
             </section>
+            
+            <section class="goals-section stats-section" id="secao-estatisticas">
+                <h2>Estatísticas de Desempenho</h2>
+                <div class="stats-container">
+                    <div class="stat-card">
+                        <h3 id="total-metas">0</h3>
+                        <p>Total Metas</p>
+                    </div>
+                    <div class="stat-card">
+                        <h3 id="metas-concluidas">0%</h3>
+                        <p>Eficiência</p>
+                    </div>
+                    <div class="stat-card">
+                        <h3 id="dias-ativos">0</h3>
+                        <p>Dias Ativos</p>
+                    </div>
+                    <canvas id="eficiencia-chart" width="400" height="200"></canvas>
+                </div>
+            </section>
         </main>
     </div>
+
 
     <script src="script.js"></script>
 </body>
