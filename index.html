@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Gestão Pessoal - Metas</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="app-container">
+        <!-- Navegação Lateral -->
+        <nav class="sidebar">
+            <h2>Visualizações</h2>
+            <ul>
+                <li class="nav-item active" data-view="diario">📅 Diário</li>
+                <li class="nav-item" data-view="semanal">📊 Semanal</li>
+                <li class="nav-item" data-view="anual">📈 Anual</li>
+            </ul>
+        </nav>
+
+        <!-- Conteúdo Principal -->
+        <main class="main-content">
+            <!-- Cabeçalho Principal -->
+            <header class="main-header">
+                <div class="header-left">
+                    <h1 id="data-atual">Hoje - 15 de Outubro de 2024</h1>
+                </div>
+                <div class="header-right">
+                    <button class="btn-nova-meta" id="btn-nova-meta">➕ Nova Meta</button>
+                </div>
+            </header>
+
+            <!-- Seções de Metas -->
+            <section class="goals-section active" id="secao-diario">
+                <h2>Metas Diárias</h2>
+                <div class="goals-container" id="lista-diario">
+                    <!-- Exemplos de itens de meta -->
+                    <article class="goal-item">
+                        <input type="checkbox" class="checkbox-meta" id="meta1">
+                        <label for="meta1" class="goal-text">Estudar React por 2 horas</label>
+                        <span class="etiqueta-prioridade alta">Alta</span>
+                        <button class="btn-excluir" aria-label="Excluir meta">&times;</button>
+                    </article>
+                    <article class="goal-item">
+                        <input type="checkbox" class="checkbox-meta" id="meta2">
+                        <label for="meta2" class="goal-text">Fazer exercício físico 30min</label>
+                        <span class="etiqueta-prioridade media">Média</span>
+                        <button class="btn-excluir" aria-label="Excluir meta">&times;</button>
+                    </article>
+                </div>
+            </section>
+
+            <section class="goals-section" id="secao-semanal">
+                <h2>Metas Semanais</h2>
+                <div class="goals-container" id="lista-semanal">
+                    <!-- Metas serão populadas aqui via JavaScript -->
+                </div>
+            </section>
+
+            <section class="goals-section" id="secao-anual">
+                <h2>Metas Anuais</h2>
+                <div class="goals-container" id="lista-anual">
+                    <!-- Metas serão populadas aqui via JavaScript -->
+                </div>
+            </section>
+        </main>
+    </div>
+
+    <script src="script.js"></script>
+</body>
+</html>
