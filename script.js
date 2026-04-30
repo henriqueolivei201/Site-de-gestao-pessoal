@@ -110,30 +110,57 @@ document.addEventListener('DOMContentLoaded', function() {
     modalOverlay.addEventListener('click', (e) => e.target === modalOverlay && fecharModal());
     metaInput.addEventListener('keypress', (e) => e.key === 'Enter' && confirmarMeta());
 
-    // ===== METAS =====
+// ===== METAS =====
+    // Track current view for chart cleanup
+    let currentView = 'diario';
+    
+    // Destroy all charts when leaving statistics section to improve performance
+    function destroyAllCharts() {
+        if (chartInstance) {
+            chartInstance.destroy();
+            chartInstance = null;
+        }
+        Object.keys(individualCharts).forEach(id => {
+            if (individualCharts[id]) {
+                individualCharts[id].destroy();
+                individualCharts[id] = null;
+            }
+        });
+    }
+
     function atualizarDataAtual() {
         const opcoes = { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' };
         const data = new Date().toLocaleDateString('pt-BR', opcoes);
         dataAtualEl.textContent = `Hoje - ${data}`;
     }
 
-    navItems.forEach(item => {
-        item.addEventListener('click', () => {
-            const view = item.dataset.view;
-            navItems.forEach(nav => nav.classList.remove('active'));
-            item.classList.add('active');
-            
-            goalsSections.forEach(section => section.classList.remove('active'));
-            const targetSection = document.getElementById(`secao-${view}`);
-            if (targetSection) targetSection.classList.add('active');
-            
-            if (view === 'estatisticas') {
+navItems.forEach(item => {
+    item.addEventListener('click', () => {
+        const view = item.dataset.view;
+        navItems.forEach(nav => nav.classList.remove('active'));
+        item.classList.add('active');
+        
+        goalsSections.forEach(section => section.classList.remove('active'));
+        const targetSection = document.getElementById(`secao-${view}`);
+        if (targetSection) targetSection.classList.add('active');
+        
+        // Mostrar/esconder botão Nova Meta
+        if (view === 'estatisticas' || view === 'calendario') {
+            btnNovaMeta.style.display = 'none';
+        } else {
+            btnNovaMeta.style.display = 'block';
+        }
+        
+if (view === 'estatisticas') {
                 renderEstatisticas();
+            } else if (view === 'calendario') {
+                renderCalendar();
             } else {
                 carregarMetas(view);
             }
-        });
     });
+});
+
 
     function getPrazoDias(view) {
         return PRAZO_DIAS[view] || 1;
@@ -233,8 +260,173 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     }
 
-    // ===== ESTATÍSTICAS =====
-    function atualizarEstatisticas() {
+// ===== CALENDÁRIO =====
+const CALENDAR_STORAGE = 'calendario_dias';
+let currentMonth = new Date().getMonth();
+let currentYear = new Date().getFullYear();
+let diaSelecionado = null;
+
+function getCalendarData() {
+return JSON.parse(localStorage.getItem(CALENDAR_STORAGE) || '{}');
+}
+
+function saveCalendarData(data) {
+    localStorage.setItem(CALENDAR_STORAGE, JSON.stringify(data));
+}
+
+function renderCalendar() {
+    const grid = document.getElementById('calendar-grid');
+    const monthYearEl = document.getElementById('calendar-month-year');
+    if (!grid || !monthYearEl) return;
+
+    const meses = ['Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho', 'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'];
+    monthYearEl.textContent = `${meses[currentMonth]} ${currentYear}`;
+
+    grid.innerHTML = '';
+    const primeiroDia = new Date(currentYear, currentMonth, 1).getDay();
+    const diasNoMes = new Date(currentYear, currentMonth + 1, 0).getDate();
+    const hoje = new Date();
+    const calendarData = getCalendarData();
+
+    // Dias vazios antes
+    for (let i = 0; i < primeiroDia; i++) {
+        const empty = document.createElement('div');
+        empty.className = 'calendar-day empty';
+        grid.appendChild(empty);
+    }
+
+    // Dias do mês
+    for (let dia = 1; dia <= diasNoMes; dia++) {
+        const dayEl = document.createElement('div');
+        dayEl.className = 'calendar-day';
+        dayEl.textContent = dia;
+
+        const dataKey = `${currentYear}-${String(currentMonth + 1).padStart(2, '0')}-${String(dia).padStart(2, '0')}`;
+        const eficiencia = calendarData[dataKey];
+
+        if (eficiencia !== undefined) {
+            if (eficiencia === 100) dayEl.classList.add('high-100');
+            else if (eficiencia >= 75) dayEl.classList.add('high-75');
+            else if (eficiencia >= 50) dayEl.classList.add('high-50');
+            else if (eficiencia >= 25) dayEl.classList.add('high-25');
+            else dayEl.classList.add('high-0');
+
+            const label = document.createElement('span');
+            label.className = 'efficiency-label';
+            label.textContent = `${eficiencia}%`;
+            dayEl.appendChild(label);
+        }
+
+        if (hoje.getDate() === dia && hoje.getMonth() === currentMonth && hoje.getFullYear() === currentYear) {
+            dayEl.classList.add('today');
+        }
+
+        // Clique abre modal eficiência
+        const isFuturo = new Date(currentYear, currentMonth, dia) > hoje;
+        if (!isFuturo) {
+            dayEl.addEventListener('click', () => abrirModalEficiencia(dataKey, dia));
+        } else {
+            dayEl.style.opacity = '0.4';
+            dayEl.style.cursor = 'default';
+        }
+
+        grid.appendChild(dayEl);
+    }
+}
+
+function abrirModalEficiencia(dataKey, dia) {
+    const calendarData = getCalendarData();
+    const currentEff = calendarData[dataKey];
+
+    // Modal existente reutilizar
+    let modal = document.getElementById('modal-eficiencia');
+    if (!modal) {
+        modal = document.createElement('div');
+        modal.id = 'modal-eficiencia';
+        modal.className = 'modal-overlay';
+        modal.innerHTML = `
+            <div class="modal">
+                <h3>Registrar Eficiência</h3>
+                <p class="efficiency-date"></p>
+                <div class="efficiency-options">
+                    <button class="efficiency-btn" data-value="0">0%</button>
+                    <button class="efficiency-btn" data-value="25">25%</button>
+                    <button class="efficiency-btn" data-value="50">50%</button>
+                    <button class="efficiency-btn" data-value="75">75%</button>
+                    <button class="efficiency-btn" data-value="100">100%</button>
+                </div>
+                <div class="modal-actions">
+                    <button class="btn-limpar" id="btn-limpar-ef">Limpar</button>
+                    <button class="btn-cancelar" id="btn-fechar-ef">Fechar</button>
+                </div>
+            </div>
+        `;
+        document.body.appendChild(modal);
+
+        modal.querySelector('.btn-cancelar').addEventListener('click', () => modal.classList.remove('active'));
+        modal.addEventListener('click', (e) => e.target === modal && modal.classList.remove('active'));
+        
+        // Limpar button - remove efficiency for the day (armazena o dataKey atual)
+        modal.querySelector('.btn-limpar').addEventListener('click', () => {
+            const currentDataKey = modal.dataset.currentDataKey;
+            const data = getCalendarData();
+            if (currentDataKey) {
+                delete data[currentDataKey];
+                saveCalendarData(data);
+            }
+            modal.classList.remove('active');
+            renderCalendar();
+        });
+
+        modal.querySelectorAll('.efficiency-btn').forEach(btn => {
+            btn.addEventListener('click', () => {
+                const currentDataKey = modal.dataset.currentDataKey;
+                const valor = parseInt(btn.dataset.value);
+                const data = getCalendarData();
+                if (currentDataKey) {
+                    data[currentDataKey] = valor;
+                    saveCalendarData(data);
+                }
+                modal.classList.remove('active');
+                renderCalendar();
+            });
+        });
+    }
+
+    // Armazenar o dataKey atual no modal para uso nos event listeners
+    modal.dataset.currentDataKey = dataKey;
+    
+    const el = modal;
+    el.querySelector('.efficiency-date').textContent = `${dia} de ${new Date(currentYear, currentMonth).toLocaleDateString('pt-BR', { month: 'long' })}`;
+    el.querySelectorAll('.efficiency-btn').forEach(btn => {
+        const val = parseInt(btn.dataset.value);
+        btn.classList.toggle('active', val === currentEff);
+    });
+    el.classList.add('active');
+}
+
+// ===== CALENDAR NAVIGATION SETUP =====
+function setupCalendarNavigation() {
+    const prevBtn = document.getElementById('prev-month');
+    const nextBtn = document.getElementById('next-month');
+    if (prevBtn) {
+        prevBtn.addEventListener('click', () => {
+            currentMonth--;
+            if (currentMonth < 0) { currentMonth = 11; currentYear--; }
+            renderCalendar();
+        });
+    }
+    if (nextBtn) {
+        nextBtn.addEventListener('click', () => {
+            currentMonth++;
+            if (currentMonth > 11) { currentMonth = 0; currentYear++; }
+            renderCalendar();
+        });
+    }
+}
+
+// ===== ESTATÍSTICAS =====
+function atualizarEstatisticas() {
         let totalMetas = 0;
         let metasConcluidas = 0;
         let diasAtivos = new Set();
@@ -253,9 +445,43 @@ document.addEventListener('DOMContentLoaded', function() {
             });
         });
         
+        const eficiencia = totalMetas ? Math.round((metasConcluidas / totalMetas) * 100) : 0;
+        
+        // Update stats bar fixa
+        const statTotal = document.getElementById('stat-total');
+        const statEficiencia = document.getElementById('stat-eficiencia');
+        const statDias = document.getElementById('stat-dias');
+        const statStreak = document.getElementById('stat-streak');
+        
+        if (statTotal) statTotal.textContent = totalMetas;
+        if (statEficiencia) statEficiencia.textContent = eficiencia + '%';
+        if (statDias) statDias.textContent = diasAtivos.size;
+        if (statStreak) statStreak.textContent = calcularStreak();
+        
+        // Update stats section
         totalMetasEl.textContent = totalMetas;
-        eficienciaEl.textContent = totalMetas ? Math.round((metasConcluidas / totalMetas) * 100) + '%' : '0%';
+        eficienciaEl.textContent = eficiencia + '%';
         diasAtivosEl.textContent = diasAtivos.size;
+    }
+    
+    function calcularStreak() {
+        const calendarData = getCalendarData();
+        const hoje = new Date();
+        let streak = 0;
+        
+        for (let i = 0; i < 365; i++) {
+            const dia = new Date(hoje);
+            dia.setDate(dia.getDate() - i);
+            const dataKey = dia.toISOString().split('T')[0];
+            const eficiencia = calendarData[dataKey];
+            
+            if (eficiencia !== undefined && eficiencia > 0) {
+                streak++;
+            } else if (i > 0) {
+                break;
+            }
+        }
+        return streak;
     }
 
     function renderEstatisticas() {
@@ -319,18 +545,180 @@ document.addEventListener('DOMContentLoaded', function() {
                     },
                     x: { grid: { display: false } }
                 },
-                plugins: {
+plugins: {
                     legend: { display: false }
                 }
             }
         });
+        
+        // Individual goal charts
+        renderIndividualCharts();
     }
 
-    // Inicialização
+    // ===== GRÁFICOS POR META =====
+    const individualCharts = {};
+    
+    function renderIndividualCharts() {
+        const container = document.getElementById('individual-charts-list');
+        if (!container) return;
+        
+        container.innerHTML = '';
+        
+        // Get all unique goals from all views
+        const allGoals = new Map();
+        Object.keys(STORAGE_KEYS).forEach(key => {
+            if (key === 'stats') return;
+            const metas = JSON.parse(localStorage.getItem(STORAGE_KEYS[key]) || '[]');
+            metas.forEach(meta => {
+                const id = `${meta.texto}-${meta.prioridade}`;
+                if (!allGoals.has(id)) {
+                    allGoals.set(id, { ...meta, view: key });
+                }
+            });
+        });
+        
+        if (allGoals.size === 0) {
+            container.innerHTML = '<p class="no-goals">Nenhuma meta cadastrada ainda.</p>';
+            return;
+        }
+        
+        allGoals.forEach((meta, id) => {
+            const chartContainer = document.createElement('div');
+            chartContainer.className = 'individual-chart-card';
+            chartContainer.innerHTML = `
+                <h4>${meta.texto}</h4>
+                <p class="meta-info">${meta.prioridade} - ${meta.view.charAt(0).toUpperCase() + meta.view.slice(1)}</p>
+                <canvas id="chart-${id.replace(/[^a-zA-Z0-9]/g, '-')}" width="300" height="150"></canvas>
+            `;
+            container.appendChild(chartContainer);
+            
+            // Render individual chart
+            setTimeout(() => {
+                const ctx = document.getElementById(`chart-${id.replace(/[^a-zA-Z0-9]/g, '-')}`);
+                if (!ctx) return;
+                
+                // Get data for this specific goal
+                const goalHistory = getGoalHistory(meta.texto, meta.prioridade, meta.view);
+                
+                if (individualCharts[id]) {
+                    individualCharts[id].destroy();
+                }
+                
+                const isDark = html.classList.contains('dark-mode');
+                const gridColor = isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)';
+                const textColor = isDark ? '#fff' : '#333';
+                
+                individualCharts[id] = new Chart(ctx, {
+                    type: 'bar',
+                    data: {
+                        labels:goalHistory.dates,
+                        datasets: [{
+                            label: 'Concluída',
+                            data: goalHistory.values,
+                            backgroundColor: goalHistory.values.map(v => v === 1 ? 'rgba(34, 197, 94, 0.7)' : 'rgba(239, 68, 68, 0.7)'),
+                            borderColor: goalHistory.values.map(v => v === 1 ? 'rgb(34, 197, 94)' : 'rgb(239, 68, 68)'),
+                            borderWidth: 1
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        scales: {
+                            y: {
+                                beginAtZero: true,
+                                max: 1,
+                                ticks: {
+                                    stepSize: 1,
+                                    callback: (val) => val === 1 ? 'Sim' : 'Não'
+                                },
+                                grid: { color: gridColor }
+                            },
+                            x: {
+                                grid: { display: false }
+                            }
+                        },
+                        plugins: {
+                            legend: { display: false }
+                        }
+                    }
+                });
+            }, 100);
+        });
+    }
+    
+    function getGoalHistory(texto, prioridade, view) {
+        const dias = [];
+        const valores = [];
+        const prazoDias = getPrazoDias(view);
+        
+        for (let i = 29; i >= 0; i--) {
+            const dia = new Date();
+            dia.setDate(dia.getDate() - i);
+            const dataStr = dia.toLocaleDateString('pt-BR', { day: 'numeric', month: 'short' });
+            
+            dias.push(dataStr);
+            
+            // Check if meta was completed on this day
+            const metas = JSON.parse(localStorage.getItem(STORAGE_KEYS[view]) || '[]');
+            const meta = metas.find(m => m.texto === texto && m.prioridade === prioridade);
+            
+            if (meta && meta.concluida) {
+                const concluidaData = meta.concluidaData ? new Date(meta.concluidaData) : null;
+                if (concluidaData && concluidaData.toDateString() === dia.toDateString()) {
+                    valores.push(1);
+                } else {
+                    valores.push(0);
+                }
+            } else {
+                valores.push(0);
+            }
+        }
+        
+        return { dates: dias, values: valores };
+    }
+
+    // ===== AUTO-EXPIRAÇÃO ===== (runs at midnight)
+    function setupMidnightCheck() {
+        const ULTIMO_RESET = 'ultimo_reset_dia';
+        const hoje = new Date().toDateString();
+        const ultimoReset = localStorage.getItem(ULTIMO_RESET);
+        
+        if (ultimoReset !== hoje) {
+            // New day - expire unfinished metas
+            Object.keys(STORAGE_KEYS).forEach(key => {
+                if (key === 'stats') return;
+                const metas = JSON.parse(localStorage.getItem(STORAGE_KEYS[key]) || '[]');
+                const prazoDias = getPrazoDias(key);
+                
+                const atualizadas = metas.map(meta => {
+                    const dataCriacao = new Date(meta.dataCriacao);
+                    const diasPassados = Math.floor((new Date() - dataCriacao) / (1000 * 60 * 60 * 24));
+                    
+                    if (diasPassados >= prazoDias && !meta.concluida) {
+                        // Meta não concluída expirou - registra 0% no calendário
+                        const dataKey = new Date().toISOString().split('T')[0].replace(/-/g, '-');
+                        const calendarData = getCalendarData();
+                        calendarData[dataKey] = 0;
+                        saveCalendarData(calendarData);
+                        return { ...meta, vencida: true };
+                    }
+                    return meta;
+                });
+                
+                localStorage.setItem(STORAGE_KEYS[key], JSON.stringify(atualizadas));
+            });
+            
+            localStorage.setItem(ULTIMO_RESET, hoje);
+        }
+    }
+
+// Inicialização
     initTema();
     atualizarDataAtual();
     carregarMetas('diario');
     atualizarEstatisticas();
+    setupMidnightCheck();
+    setupCalendarNavigation();
     
     themeToggle.addEventListener('click', toggleTema);
     

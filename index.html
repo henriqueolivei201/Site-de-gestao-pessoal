@@ -9,8 +9,29 @@
 
 </head>
 <body>
+    <!-- Stats Bar Fixa -->
+    <div class="stats-bar">
+        <div class="stat-item">
+            <span class="stat-value" id="stat-total">0</span>
+            <span class="stat-label">Total Metas</span>
+        </div>
+        <div class="stat-item">
+            <span class="stat-value" id="stat-eficiencia">0%</span>
+            <span class="stat-label">Eficiência</span>
+        </div>
+        <div class="stat-item">
+            <span class="stat-value" id="stat-dias">0</span>
+            <span class="stat-label">Dias Ativos</span>
+        </div>
+        <div class="stat-item">
+            <span class="stat-value" id="stat-streak">0</span>
+            <span class="stat-label">Streak</span>
+        </div>
+    </div>
+
     <div class="app-container">
         <!-- Overlay Modal -->
+
         <div class="modal-overlay" id="modal-overlay">
             <div class="modal">
                 <h3>Nova Meta</h3>
@@ -42,12 +63,13 @@
                 <li class="nav-item active" data-view="diario">📅 Diário</li>
                 <li class="nav-item" data-view="semanal">📊 Semanal</li>
                 <li class="nav-item" data-view="anual">📈 Anual</li>
-                <li class="nav-item" data-view="estatisticas">📉 Estatísticas</li>
+<li class="nav-item" data-view="estatisticas">📉 Estatísticas</li>
+                <li class="nav-item" data-view="calendario">📅 Calendário</li>
             </ul>
-
         </nav>
 
         <!-- Conteúdo Principal -->
+
         <main class="main-content">
             <!-- Cabeçalho Principal -->
             <header class="main-header">
@@ -93,7 +115,7 @@
                 </div>
             </section>
             
-            <section class="goals-section stats-section" id="secao-estatisticas">
+<section class="goals-section stats-section" id="secao-estatisticas">
                 <h2>Estatísticas de Desempenho</h2>
                 <div class="stats-container">
                     <div class="stat-card">
@@ -110,6 +132,26 @@
                     </div>
                     <canvas id="eficiencia-chart" width="400" height="200"></canvas>
                 </div>
+                <!-- Individual Goal Charts -->
+                <div class="individual-charts-container">
+                    <h3>Desempenho por Meta</h3>
+                    <div id="individual-charts-list"></div>
+                </div>
+            </section>
+            
+            <!-- Calendário -->
+            <section class="goals-section calendar-section" id="secao-calendario">
+                <h2>Calendário de Compromissos</h2>
+                <p class="calendar-subtitle">Clique em um dia para registrar sua eficiência</p>
+                <div class="calendar-navigation">
+                    <button id="prev-month"><</button>
+                    <h3 id="calendar-month-year">Outubro 2024</h3>
+                    <button id="next-month">></button>
+                </div>
+                <div class="calendar-weekdays">
+                    <span>Dom</span><span>Seg</span><span>Ter</span><span>Qua</span><span>Qui</span><span>Sex</span><span>Sáb</span>
+                </div>
+                <div class="calendar-grid" id="calendar-grid"></div>
             </section>
         </main>
     </div>

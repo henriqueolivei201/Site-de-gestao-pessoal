@@ -1,25 +1,21 @@
-# TODO - Estatísticas + Expiração Metas
+# TODO - Corrigir Calendário
 
-**Plano Aprovado:**
+**Problema 1: Setas de navegação do mês não funcionam** ✅ CORRIGIDO
+- Causa: Dois DOMContentLoaded separados no código
+- Solução: Criada função setupCalendarNavigation() e chamada na inicialização
 
-**Informações Reunidas:**
-- Sidebar atual: Diário/Semanal/Anual + Dark toggle
-- Metas persistem localStorage por período
-- Modal nova meta funcional
+**Problema 2: Não há opção para cancelar/limpar eficiência** ✅ CORRIGIDO
+- Solução: Adicionado botão "Limpar" no modal + estilos CSS
 
-**Plano:**
-1. **index.html**: 
-   - Sidebar: + '📊 Estatísticas'
-   - Nova section #secao-estatisticas (canvas gráfico)
-2. **script.js**:
-   - Nova nav 'estatisticas'
-   - Model meta: dataCriacao, prazoDias (1/7/365), historico cumprimento
-   - Status expiração todas metas (badge Vencida/Ativa)
-   - Gráfico eficiência: canvas line chart 30/100 dias % cumprimento
-   - Stats: total/concluídas/eficiência por período
-3. **style.css**: Stats section, canvas, badges status
-4. Teste + completion
+**Problema 3: Dados iam para dia errado (BUG DA CLOSURE)** ✅ CORRIGIDO
+- Causa: Event listeners capturavam o dataKey errado - closure issue
+- Solução: Armazenar dataKey no modal.dataset.currentDataKey ao abrir modal
 
-**Dependentes:** index.html, script.js, style.css
+**Arquivos editados:**
+- script.js - Correções + botão limpar
+- style.css - estilo .btn-limpar
 
-**Follow-up:** Instalar Chart.js? (CDN simples)
+**Implementado:**
+- [x] 1. Navegação entre meses funcionando
+- [x] 2. Botão "Limpar" para resetar eficiência
+- [x] 3. Dados salvos no dia correto (fix closure)

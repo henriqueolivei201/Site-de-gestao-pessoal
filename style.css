@@ -151,7 +151,7 @@ body {
 .main-content {
     flex: 1;
     margin-left: 280px;
-    padding: 2rem;
+    padding: 6rem 2rem 2rem 2rem;
     animation: fadeIn 0.5s ease;
 }
 
@@ -234,7 +234,8 @@ body {
     font-size: 1.6rem;
     text-align: center;
     background: linear-gradient(135deg, var(--primary-blue-60), var(--primary-blue-30));
-    -webkit-background-clip: text;
+    -webkit-background-clip: text; /* Para navegadores baseados em Webkit */
+    background-clip: text;         /* A propriedade padrão (resolve o erro) */
     -webkit-text-fill-color: transparent;
 }
 
@@ -310,6 +311,63 @@ body {
     justify-content: flex-end;
 }
 
+/* Stats Bar Fixa */
+.stats-bar {
+    position: fixed;
+    top: 0;
+    left: 280px;
+    right: 0;
+    background: var(--bg-secondary);
+    backdrop-filter: blur(20px);
+    display: flex;
+    justify-content: space-around;
+    align-items: center;
+    padding: 1rem 2rem;
+    box-shadow: var(--shadow-light);
+    z-index: 500;
+    border-bottom: 1px solid var(--border-color);
+    
+}
+
+@media (max-width: 768px) {
+    .stats-bar {
+        left: 0;
+        padding: 0.75rem 1rem;
+    }
+    
+    .stat-value {
+        font-size: 1.2rem;
+    }
+    
+    .stat-label {
+        font-size: 0.65rem;
+    }
+}
+
+.stat-item {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.25rem;
+}
+
+.stat-value {
+    font-size: 1.5rem;
+    font-weight: 800;
+    background: linear-gradient(135deg, var(--primary-blue-60), var(--primary-blue-30));
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+}
+
+.stat-label {
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: var(--text-secondary);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
 /* Stats Section */
 .stats-section {
     padding: 1rem 0;
@@ -341,7 +399,8 @@ body {
     font-size: 2.5rem;
     font-weight: 800;
     background: linear-gradient(135deg, var(--primary-blue-60), var(--primary-blue-30));
-    -webkit-background-clip: text;
+    -webkit-background-clip: text; /* Para navegadores baseados em Webkit */
+    background-clip: text;         /* A propriedade padrão (resolve o erro) */
     -webkit-text-fill-color: transparent;
     margin-bottom: 0.5rem;
 }
@@ -350,6 +409,75 @@ body {
     color: var(--text-secondary);
     font-weight: 500;
     margin: 0;
+}
+
+/* Individual Charts */
+.individual-charts-container {
+    margin-top: 2rem;
+    padding-top: 2rem;
+    border-top: 1px solid var(--border-color);
+    max-height: 400px;
+    overflow-y: auto;
+    scroll-behavior: smooth;
+}
+
+.individual-charts-container::-webkit-scrollbar {
+    width: 8px;
+}
+
+.individual-charts-container::-webkit-scrollbar-track {
+    background: var(--bg-secondary);
+    border-radius: 4px;
+}
+
+.individual-charts-container::-webkit-scrollbar-thumb {
+    background: var(--primary-blue-30);
+    border-radius: 4px;
+}
+
+.individual-charts-container h3 {
+    font-size: 1.5rem;
+    margin-bottom: 1.5rem;
+    color: var(--text-primary);
+}
+
+.individual-chart-card {
+    background: var(--bg-card);
+    border-radius: 12px;
+    padding: 1.5rem;
+    margin-bottom: 1.5rem;
+    box-shadow: var(--shadow-light);
+    transition: transform 0.3s ease;
+    max-height: 250px;
+    overflow: hidden;
+}
+
+.individual-chart-card canvas {
+    height: 150px !important;
+    max-height: 150px;
+}
+
+
+.individual-chart-card:hover {
+    transform: translateY(-5px);
+}
+
+.individual-chart-card h4 {
+    font-size: 1.1rem;
+    color: var(--text-primary);
+    margin-bottom: 0.25rem;
+}
+
+.individual-chart-card .meta-info {
+    font-size: 0.85rem;
+    color: var(--text-secondary);
+    margin-bottom: 1rem;
+}
+
+.no-goals {
+    color: var(--text-secondary);
+    font-style: italic;
+    padding: 1rem;
 }
 
 #eficiencia-chart {
@@ -382,6 +510,155 @@ body {
     border: 1px solid rgba(16, 185, 129, 0.4);
 }
 
+/* Calendar */
+.calendar-section {
+    padding: 1rem 0;
+}
+
+.calendar-subtitle {
+    color: var(--text-secondary);
+    margin-bottom: 2rem;
+    font-size: 1.1rem;
+}
+
+.calendar-navigation {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 1.5rem;
+    margin-bottom: 1.5rem;
+}
+
+.calendar-navigation button {
+    background: var(--primary-blue-30);
+    color: white;
+    border: none;
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    font-size: 1.2rem;
+    cursor: pointer;
+    transition: all 0.3s ease;
+}
+
+.calendar-navigation button:hover {
+    background: var(--primary-blue-60);
+    transform: scale(1.1);
+}
+
+.calendar-navigation h3 {
+    font-size: 1.5rem;
+    min-width: 180px;
+    text-align: center;
+    background: linear-gradient(135deg, var(--primary-blue-60), var(--primary-blue-30));
+    -webkit-background-clip: text; /* Para navegadores baseados em Webkit */
+    background-clip: text;         /* A propriedade padrão (resolve o erro) */
+    -webkit-text-fill-color: transparent;
+}
+
+.calendar-weekdays {
+    display: grid;
+    grid-template-columns: repeat(7, 1fr);
+    gap: 0.5rem;
+    margin-bottom: 1rem;
+    text-align: center;
+    font-weight: 600;
+    color: var(--text-secondary);
+}
+
+.calendar-grid {
+    display: grid;
+    grid-template-columns: repeat(7, 1fr);
+    gap: 0.5rem;
+}
+
+.calendar-day {
+    aspect-ratio: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    border-radius: 12px;
+    background: var(--bg-card);
+    border: 2px solid var(--border-color);
+    cursor: pointer;
+    transition: all 0.3s ease;
+    font-weight: 600;
+    position: relative;
+    min-height: 60px;
+}
+
+.calendar-day:hover {
+    transform: scale(1.05);
+    border-color: var(--primary-blue-30);
+}
+
+.calendar-day.empty {
+    background: transparent;
+    border: none;
+    cursor: default;
+}
+
+.calendar-day.empty:hover {
+    transform: none;
+}
+
+.calendar-day.today {
+    border-color: var(--primary-blue-60);
+    box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.3);
+}
+
+.calendar-day.high-100 { background: var(--success); color: white; }
+.calendar-day.high-75 { background: #84cc16; color: white; }
+.calendar-day.high-50 { background: #eab308; color: white; }
+.calendar-day.high-25 { background: #f97316; color: white; }
+.calendar-day.high-0 { background: #ef4444; color: white; }
+
+.calendar-day .efficiency-label {
+    font-size: 0.7rem;
+    margin-top: 2px;
+}
+
+.efficiency-modal {
+    text-align: center;
+}
+
+.efficiency-options {
+    display: grid;
+    grid-template-columns: repeat(5, 1fr);
+    gap: 0.75rem;
+    margin: 1.5rem 0;
+}
+
+.efficiency-btn {
+    padding: 1rem 0.5rem;
+    border: 2px solid var(--border-color);
+    border-radius: 12px;
+    background: transparent;
+    cursor: pointer;
+    font-weight: 600;
+    transition: all 0.3s ease;
+    font-size: 1rem;
+}
+
+.efficiency-btn:hover, .efficiency-btn.active {
+    border-color: var(--primary-blue-30);
+    background: var(--primary-blue-10);
+    color: var(--primary-blue-60);
+}
+
+@media (max-width: 768px) {
+    .calendar-day {
+        min-height: 50px;
+        font-size: 0.9rem;
+    }
+    
+    .calendar-navigation h3 {
+        font-size: 1.2rem;
+        min-width: 140px;
+    }
+}
+
 @media (max-width: 768px) {
     .stats-container {
         grid-template-columns: 1fr;
@@ -394,7 +671,7 @@ body {
 }
 
 
-.btn-cancelar, .btn-confirmar {
+.btn-cancelar, .btn-confirmar, .btn-limpar {
     padding: 1rem 2rem;
     border: none;
     border-radius: 12px;
@@ -410,6 +687,15 @@ body {
 
 .btn-cancelar:hover {
     background: rgba(148, 163, 184, 0.3);
+}
+
+.btn-limpar {
+    background: var(--danger);
+    color: white;
+}
+
+.btn-limpar:hover {
+    background: #dc2626;
 }
 
 .btn-confirmar {
@@ -514,7 +800,7 @@ body {
 }
 
 .goal-item.exemplo {
-    opacity: 0.6;
+    opacity: 0.6; 
     font-style: italic;
 }
 
