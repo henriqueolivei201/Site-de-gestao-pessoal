@@ -596,34 +596,26 @@ function atualizarEstatisticas() {
         return streak;
     }
 
-    function renderEstatisticas() {
+function renderEstatisticas() {
         atualizarEstatisticas();
         
-        // Gráfico eficiência últimos 30 dias
+        // Gráfico eficiência últimos 30 dias - LÊ EXCLUSIVAMENTE DO CALENDÁRIO
         const ctx = chartCtx.getContext('2d');
+        const calendarData = getCalendarData(); // Lê do Calendário
         const agora = new Date();
         const dados30Dias = [];
         
         for (let i = 29; i >= 0; i--) {
             const dia = new Date(agora);
             dia.setDate(dia.getDate() - i);
-            const dataStr = dia.toDateString();
             
-            let completas = 0, total = 0;
-            Object.keys(STORAGE_KEYS).forEach(key => {
-                if (key === 'stats') return;
-                const metas = JSON.parse(localStorage.getItem(STORAGE_KEYS[key]) || '[]');
-                metas.forEach(meta => {
-                    if (new Date(meta.dataCriacao).toDateString() === dataStr) {
-                        total++;
-                        if (meta.concluida) completas++;
-                    }
-                });
-            });
+            // Formato: YYYY-MM-DD (mesmo do Calendário)
+            const dataKey = `${dia.getFullYear()}-${String(dia.getMonth() + 1).padStart(2, '0')}-${String(dia.getDate()).padStart(2, '0')}`;
+            const eficiencia = calendarData[dataKey];
             
             dados30Dias.push({
                 label: dia.toLocaleDateString('pt-BR', {day: 'numeric', month: 'short'}),
-                value: total ? Math.round((completas / total) * 100) : 0
+                value: eficiencia !== undefined ? eficiencia : 0
             });
         }
         
@@ -758,10 +750,10 @@ plugins: {
         });
     }
     
-    function getGoalHistory(texto, prioridade, view) {
+function getGoalHistory(texto, prioridade, view) {
         const dias = [];
         const valores = [];
-        const prazoDias = getPrazoDias(view);
+        const calendarData = getCalendarData(); // Lê do Calendário
         
         for (let i = 29; i >= 0; i--) {
             const dia = new Date();
@@ -770,17 +762,16 @@ plugins: {
             
             dias.push(dataStr);
             
-            // Check if meta was completed on this day
-            const metas = JSON.parse(localStorage.getItem(STORAGE_KEYS[view]) || '[]');
-            const meta = metas.find(m => m.texto === texto && m.prioridade === prioridade);
+            // Formato: YYYY-MM-DD (mesmo do Calendário)
+            const dataKey = `${dia.getFullYear()}-${String(dia.getMonth() + 1).padStart(2, '0')}-${String(dia.getDate()).padStart(2, '0')}`;
+            const eficiencia = calendarData[dataKey];
             
-            if (meta && meta.concluida) {
-                const concluidaData = meta.concluidaData ? new Date(meta.concluidaData) : null;
-                if (concluidaData && concluidaData.toDateString() === dia.toDateString()) {
-                    valores.push(1);
-                } else {
-                    valores.push(0);
-                }
+// Se a eficiência do dia for > 50%, considera-se que a tarefa foi Productivity
+            // (lógica simples baseada no dado do Calendário)
+            if (eficiencia !== undefined && eficiencia > 50) {
+                valores.push(1);
+            } else if (eficiencia !== undefined && eficiencia > 0) {
+                valores.push(0.5); // Parcialmente completa
             } else {
                 valores.push(0);
             }
