@@ -262,6 +262,7 @@ if (view === 'estatisticas') {
 
 // ===== CALENDÁRIO =====
 const CALENDAR_STORAGE = 'calendario_dias';
+const CALENDAR_TAREFAS = 'calendario_tarefas_dia'; // NOVO: Armazena status individual por tarefa por dia
 let currentMonth = new Date().getMonth();
 let currentYear = new Date().getFullYear();
 let diaSelecionado = null;
@@ -272,6 +273,26 @@ return JSON.parse(localStorage.getItem(CALENDAR_STORAGE) || '{}');
 
 function saveCalendarData(data) {
     localStorage.setItem(CALENDAR_STORAGE, JSON.stringify(data));
+}
+
+// NOVA: Função para obter status das tarefas de um dia específico
+function getTarefasDoDia(dataKey) {
+    const tarefasDia = JSON.parse(localStorage.getItem(CALENDAR_TAREFAS) || '{}');
+    return tarefasDia[dataKey] || {};
+}
+
+// NOVA: Função para salvar status das tarefas de um dia específico
+function saveTarefasDoDia(dataKey, tarefasStatus) {
+    const tarefasDia = JSON.parse(localStorage.getItem(CALENDAR_TAREFAS) || '{}');
+    tarefasDia[dataKey] = tarefasStatus;
+    localStorage.setItem(CALENDAR_TAREFAS, JSON.stringify(tarefasDia));
+}
+
+// NOVA: Função para salvar estado de uma tarefa específica de um dia
+function salvarEstadoTarefaDia(dataKey, taskId, concluida) {
+    const tarefasDia = getTarefasDoDia(dataKey);
+    tarefasDia[taskId] = concluida;
+    saveTarefasDoDia(dataKey, tarefasDia);
 }
 
 function renderCalendar() {
@@ -364,19 +385,32 @@ function abrirModalEficiencia(dataKey, dia) {
 modal.querySelector('#btn-cancelar-dia').addEventListener('click', () => modal.classList.remove('active'));
         modal.addEventListener('click', (e) => e.target === modal && modal.classList.remove('active'));
         
-        // Limpar - remove a eficiência do dia
+// Limpar - remove a eficiência do dia E as tarefas individuais
         modal.querySelector('#btn-limpar-dia').addEventListener('click', () => {
             const currentDataKey = modal.dataset.currentDataKey;
+            
+            // 1. Remove eficiência do dia em calendario_dias
             const data = getCalendarData();
-            if (currentDataKey && data[currentDataKey]) {
+// CORREÇÃO: Verificar explicitamente !== undefined para lidar com eficiência 0%
+            if (currentDataKey && data[currentDataKey] !== undefined) {
                 delete data[currentDataKey];
                 saveCalendarData(data);
             }
+            
+            // 2. Remove todas as tarefas individuais deste dia em calendario_tarefas_dia
+            const tarefasDia = JSON.parse(localStorage.getItem(CALENDAR_TAREFAS) || '{}');
+            if (tarefasDia[currentDataKey]) {
+                delete tarefasDia[currentDataKey];
+                localStorage.setItem(CALENDAR_TAREFAS, JSON.stringify(tarefasDia));
+            }
+            
+            // 3. Atualiza os gráficos após a limpeza
             modal.classList.remove('active');
             renderCalendar();
+            renderEstatisticas(); // Atualiza gráficos automaticamente
         });
         
-// Confirmar - salva o status das tarefas
+// Confirmar - salva o status das tarefas E atualiza os gráficos
         modal.querySelector('#btn-confirmar-dia').addEventListener('click', () => {
             const currentDataKey = modal.dataset.currentDataKey;
             const tarefasContainer = modal.querySelector('.tarefas-lista');
@@ -397,6 +431,7 @@ modal.querySelector('#btn-cancelar-dia').addEventListener('click', () => modal.c
             }
             modal.classList.remove('active');
             renderCalendar();
+            renderEstatisticas(); // Atualiza gráficos automaticamente
         });
     }
 
@@ -404,11 +439,14 @@ modal.querySelector('#btn-cancelar-dia').addEventListener('click', () => modal.c
     // O usuário pode customizar qualquer dia, mesmo que tenha esquecido de acessar
     const todasMetas = JSON.parse(localStorage.getItem(STORAGE_KEYS['diario']) || '[]');
 
-    // Armazenar o dataKey atual no modal
+// Armazenar o dataKey atual no modal
     modal.dataset.currentDataKey = dataKey;
     
     const el = modal;
-el.querySelector('.efficiency-date').textContent = `${dia} de ${new Date(currentYear, currentMonth).toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' })}`;
+    el.querySelector('.efficiency-date').textContent = `${dia} de ${new Date(currentYear, currentMonth).toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' })}`;
+    
+    // NOVO: Buscar estado salvo das tarefas deste dia específico
+    const tarefasDiaSalvo = getTarefasDoDia(dataKey);
     
     // Renderizar lista de tarefas
     const tarefasContainer = el.querySelector('.tarefas-lista');
@@ -422,19 +460,27 @@ el.querySelector('.efficiency-date').textContent = `${dia} de ${new Date(current
         todasMetas.forEach((meta, index) => {
             const tarefaEl = document.createElement('div');
             tarefaEl.className = 'tarefa-item';
-            const jaConcluida = meta.concluida;
-            if (jaConcluida) conclusas++;
+            
+            // NOVO: Verificar se há estado salvo para esta tarefa neste dia
+            // Se não houver, usar o estado atual da meta como padrão
+            const taskId = `${meta.texto}-${meta.prioridade}`;
+            const concluidaDia = tarefasDiaSalvo[taskId] !== undefined 
+                ? tarefasDiaSalvo[taskId] 
+                : meta.concluida;
+            
+            if (concluidaDia) conclusas++;
             
             tarefaEl.innerHTML = `
                 <span class="tarefa-texto">${meta.texto}</span>
                 <div class="tarefa-botoes">
-                    <button class="btn-v ${jaConcluida ? 'active' : ''}" data-index="${index}">✓</button>
-                    <button class="btn-x ${!jaConcluida ? 'active' : ''}" data-index="${index}">✗</button>
+                    <button class="btn-v ${concluidaDia ? 'active' : ''}" data-task-id="${taskId}">✓</button>
+                    <button class="btn-x ${!concluidaDia ? 'active' : ''}" data-task-id="${taskId}">✗</button>
                 </div>
             `;
             
             // Armazenar estado inicial
-            tarefaEl.dataset.concluida = jaConcluida ? 'true' : 'false';
+            tarefaEl.dataset.concluida = concluidaDia ? 'true' : 'false';
+            tarefaEl.dataset.taskId = taskId;
             
             tarefaEl.querySelector('.btn-v').addEventListener('click', function() {
                 const item = this.closest('.tarefa-item');
@@ -443,6 +489,8 @@ el.querySelector('.efficiency-date').textContent = `${dia} de ${new Date(current
                 item.querySelector('.btn-x').classList.remove('active');
                 item.dataset.concluida = 'true';
                 atualizarEficienciaModal(modal);
+                // NOVO: Salvar estado ao clicar
+                salvarEstadoTarefaDia(dataKey, item.dataset.taskId, true);
             });
             
             tarefaEl.querySelector('.btn-x').addEventListener('click', function() {
@@ -452,12 +500,14 @@ el.querySelector('.efficiency-date').textContent = `${dia} de ${new Date(current
                 item.querySelector('.btn-v').classList.remove('active');
                 item.dataset.concluida = 'false';
                 atualizarEficienciaModal(modal);
+                // NOVO: Salvar estado ao clicar
+                salvarEstadoTarefaDia(dataKey, item.dataset.taskId, false);
             });
             
             tarefasContainer.appendChild(tarefaEl);
         });
         
-        // Calcular eficiência inicial
+        // Calcular eficiência inicial basada no estado salvo
         const eficiencia = Math.round((conclusas / todasMetas.length) * 100);
         atualizarDisplayEficiencia(el, eficiencia);
     }
@@ -613,9 +663,12 @@ function renderEstatisticas() {
             const dataKey = `${dia.getFullYear()}-${String(dia.getMonth() + 1).padStart(2, '0')}-${String(dia.getDate()).padStart(2, '0')}`;
             const eficiencia = calendarData[dataKey];
             
+            // Se tem dado salvo (inclusive 0%), usa o valor. Se não tem, usa null para não mostrar
+            const value = eficiencia !== undefined ? eficiencia : null;
+            
             dados30Dias.push({
                 label: dia.toLocaleDateString('pt-BR', {day: 'numeric', month: 'short'}),
-                value: eficiencia !== undefined ? eficiencia : 0
+                value: value
             });
         }
         
@@ -682,13 +735,18 @@ plugins: {
         });
         
         if (allGoals.size === 0) {
-            container.innerHTML = '<p class="no-goals">Nenhuma meta cadastrada ainda.</p>';
+container.innerHTML = '<p class="no-data-message">Nenhuma meta cadastrada ainda.</p>';
             return;
         }
         
-        allGoals.forEach((meta, id) => {
+allGoals.forEach((meta, id) => {
             const chartContainer = document.createElement('div');
             chartContainer.className = 'individual-chart-card';
+            
+            // Get history data from JANELA DESLIZANTE FIXA DE 10 DIAS
+            const taskId = `${meta.texto}-${meta.prioridade}`;
+            const dadosJanela = gerarJanela10Dias(taskId);
+            
             chartContainer.innerHTML = `
                 <h4>${meta.texto}</h4>
                 <p class="meta-info">${meta.prioridade} - ${meta.view.charAt(0).toUpperCase() + meta.view.slice(1)}</p>
@@ -696,13 +754,10 @@ plugins: {
             `;
             container.appendChild(chartContainer);
             
-            // Render individual chart
+            // Render individual chart com JANELA DESLIZANTE FIXA
             setTimeout(() => {
                 const ctx = document.getElementById(`chart-${id.replace(/[^a-zA-Z0-9]/g, '-')}`);
                 if (!ctx) return;
-                
-                // Get data for this specific goal
-                const goalHistory = getGoalHistory(meta.texto, meta.prioridade, meta.view);
                 
                 if (individualCharts[id]) {
                     individualCharts[id].destroy();
@@ -712,16 +767,38 @@ plugins: {
                 const gridColor = isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)';
                 const textColor = isDark ? '#fff' : '#333';
                 
+                // Arrays fixos de 10 posições sempre
+                const labels = dadosJanela.map(d => d.data);
+                const values = dadosJanela.map(d => d.valor);
+                
                 individualCharts[id] = new Chart(ctx, {
-                    type: 'bar',
+                    type: 'line',
                     data: {
-                        labels:goalHistory.dates,
+                        labels: labels,
                         datasets: [{
                             label: 'Concluída',
-                            data: goalHistory.values,
-                            backgroundColor: goalHistory.values.map(v => v === 1 ? 'rgba(34, 197, 94, 0.7)' : 'rgba(239, 68, 68, 0.7)'),
-                            borderColor: goalHistory.values.map(v => v === 1 ? 'rgb(34, 197, 94)' : 'rgb(239, 68, 68)'),
-                            borderWidth: 1
+                            data: values,
+                            borderWidth: 3,
+                            // Estilo de Degrau com 90°
+                            stepped: true,
+                            tension: 0,
+                            // Área preenchida Premium: Verde para 1, Vermelho para 0
+                            fill: {
+                                target: { value: 1 },
+                                above: 'rgba(34, 197, 94, 0.25)',
+                                below: 'rgba(239, 68, 68, 0.15)'
+                            },
+                            pointBorderColor: '#fff',
+                            pointBorderWidth: 2,
+                            pointRadius: 6,
+                            pointHoverRadius: 8,
+                            spanGaps: true,
+                            // Cores dinâmicas por segmento
+                            segment: {
+                                borderColor: (ctx) => ctx.p0.parsed.y === 1 ? 'rgb(34, 197, 94)' : 'rgb(239, 68, 68)',
+                                backgroundColor: (ctx) => ctx.p0.parsed.y === 1 ? 'rgba(34, 197, 94, 0.35)' : 'rgba(239, 68, 68, 0.2)'
+                            },
+                            pointBackgroundColor: values.map(v => v === 1 ? 'rgb(34, 197, 94)' : 'rgb(239, 68, 68)')
                         }]
                     },
                     options: {
@@ -733,12 +810,17 @@ plugins: {
                                 max: 1,
                                 ticks: {
                                     stepSize: 1,
-                                    callback: (val) => val === 1 ? 'Sim' : 'Não'
+                                    callback: (val) => val === 1 ? 'Sim' : (val === 0 ? 'Não' : '')
                                 },
                                 grid: { color: gridColor }
                             },
                             x: {
-                                grid: { display: false }
+                                grid: { display: false },
+                                ticks: {
+                                    maxRotation: 45,
+                                    minRotation: 45,
+                                    autoSkip: true
+                                }
                             }
                         },
                         plugins: {
@@ -750,35 +832,167 @@ plugins: {
         });
     }
     
-function getGoalHistory(texto, prioridade, view) {
-        const dias = [];
-        const valores = [];
-        const calendarData = getCalendarData(); // Lê do Calendário
+// ===== FUNÇÃO 1: encontrarDataOrigemGlobal() =====
+// Encontra a primeira data com QUALQUER registro (0 ou 1) no histórico global
+// Esta é a "Data de Origem" ÚNICA usada por TODOS os gráficos
+function encontrarDataOrigemGlobal() {
+    const tarefasCalendar = JSON.parse(localStorage.getItem(CALENDAR_TAREFAS) || '{}');
+    const datasComDados = Object.keys(tarefasCalendar);
+    
+    // Se não há dados, usar hoje - 9 dias (últimos 10 dias)
+    if (datasComDados.length === 0) {
+        const hoje = new Date();
+        hoje.setDate(hoje.getDate() - 9);
+        return hoje.toISOString().split('T')[0];
+    }
+    
+    let primeiraData = null;
+    let menorDiff = Infinity;
+    
+    // Procurar a data mais antiga com ALGUM registro (de qualquer tarefa)
+    for (let i = 0; i < datasComDados.length; i++) {
+        const dataKey = datasComDados[i];
+        const diaData = tarefasCalendar[dataKey];
         
-        for (let i = 29; i >= 0; i--) {
-            const dia = new Date();
-            dia.setDate(dia.getDate() - i);
-            const dataStr = dia.toLocaleDateString('pt-BR', { day: 'numeric', month: 'short' });
+        // Verificar se este dia tem ALGUM registro (não importa o valor)
+        if (diaData && Object.keys(diaData).length > 0) {
+            const dataObj = new Date(dataKey);
+            const diffDias = Math.floor((new Date() - dataObj) / (1000 * 60 * 60 * 24));
             
-            dias.push(dataStr);
-            
-            // Formato: YYYY-MM-DD (mesmo do Calendário)
-            const dataKey = `${dia.getFullYear()}-${String(dia.getMonth() + 1).padStart(2, '0')}-${String(dia.getDate()).padStart(2, '0')}`;
-            const eficiencia = calendarData[dataKey];
-            
-// Se a eficiência do dia for > 50%, considera-se que a tarefa foi Productivity
-            // (lógica simples baseada no dado do Calendário)
-            if (eficiencia !== undefined && eficiencia > 50) {
-                valores.push(1);
-            } else if (eficiencia !== undefined && eficiencia > 0) {
-                valores.push(0.5); // Parcialmente completa
-            } else {
-                valores.push(0);
+            if (diffDias < menorDiff) {
+                menorDiff = diffDias;
+                primeiraData = dataKey;
+            }
+        }
+    }
+    
+    // Se não encontrou nenhuma data com dados, usar hoje - 9 dias
+    if (!primeiraData) {
+        const hoje = new Date();
+        hoje.setDate(hoje.getDate() - 9);
+        return hoje.toISOString().split('T')[0];
+    }
+    
+    return primeiraData;
+}
+
+// ===== FUNÇÃO 2: gerarDadosGrafico() =====
+// USA .slice(-10) PARA LIMITAR A 10 DIAS conforme solicitado
+// 1. Gerar TODOS os dados desde o primeiro registro
+// 2. Aplicar .slice(-10) para pegar os ÚLTIMOS 10 dias
+function gerarDadosGrafico(texto, prioridade, view) {
+    const taskId = `${texto}-${prioridade}`;
+    const tarefasCalendar = JSON.parse(localStorage.getItem(CALENDAR_TAREFAS) || '{}');
+    
+    // 1. Obter a Data de Origem ÚNICA (global)
+    const dataOrigem = encontrarDataOrigemGlobal();
+    const dataInicio = new Date(dataOrigem);
+    const hoje = new Date();
+    
+    // 2. Calcular total de dias desde a data de origem até hoje
+    let diffTotal = Math.floor((hoje - dataInicio) / (1000 * 60 * 60 * 24));
+    const maxDias = Math.max(diffTotal, 1);  // Pelo menos 1 dia
+    
+    // 3. Gerar TODOS os dadosbrutos desde a data de origem
+    const dadosbrutos = [];
+    
+    for (let i = 0; i <= maxDias; i++) {
+        const dia = new Date(dataInicio);
+        dia.setDate(dia.getDate() + i);
+        const dataKey = `${dia.getFullYear()}-${String(dia.getMonth() + 1).padStart(2, '0')}-${String(dia.getDate()).padStart(2, '0')}`;
+        const diaData = tarefasCalendar[dataKey];
+        
+        // Lógica binária: 0 ou 1, NUNCA null
+        let valor = 0;
+        if (diaData && diaData[taskId] !== undefined) {
+            valor = diaData[taskId] === true ? 1 : 0;
+        }
+        
+        dadosbrutos.push({
+            data: dia.toLocaleDateString('pt-BR', { day: '2-digit', month: 'short' }),
+            valor: valor
+        });
+    }
+    
+    // 4. APLICAR .slice(-10) CONFORME SOLICITADO
+    const dadosLimitados = dadosbrutos.slice(-10);
+    
+    return dadosLimitados;
+}
+
+// ===== FUNÇÃO 3: getGoalHistory() (compatibilidade) =====
+function getGoalHistory(texto, prioridade, view) {
+    const dados = gerarDadosGrafico(texto, prioridade, view);
+    
+    return {
+        dates: dados.map(d => d.data),
+        values: dados.map(d => d.valor),
+        temDados: true,
+        primeiroRegistroIndex: 0
+    };
+}
+
+// ===== JANELA DESLIZANTE FIXA DE 10 DIAS =====
+/**
+ * Gera janela deslizante fixa de 10 dias (Hoje-9 até Hoje)
+ * Saída: Array fixo de 10 posições sempre, mesmo sem dados
+ */
+function gerarJanela10Dias(taskId) {
+    const hoje = new Date();
+    const tarefasCalendar = JSON.parse(localStorage.getItem('calendario_tarefas_dia') || '{}');
+    const janela = [];
+    
+    // Loop de Hoje-9 até Hoje (10 dias fixos)
+    for (let i = 9; i >= 0; i--) {
+        const dia = new Date(hoje);
+        dia.setDate(dia.getDate() - i);
+        
+        // DataKey no formato YYYY-MM-DD
+        const dataKey = `${dia.getFullYear()}-${String(dia.getMonth() + 1).padStart(2, '0')}-${String(dia.getDate()).padStart(2, '0')}`;
+        
+        // Buscar no localStorage: 1 se concluída, 0 se não registrada ou não concluída
+        let valor = 0;
+        if (tarefasCalendar[dataKey]) {
+            const tarefaDia = tarefasCalendar[dataKey][taskId];
+            if (tarefaDia === true || tarefaDia === 1) {
+                valor = 1;
             }
         }
         
-        return { dates: dias, values: valores };
+        // Formatar data curta: 30/Abr, 01/Mai
+        const dataFormatada = dia.toLocaleDateString('pt-BR', {
+            day: '2-digit',
+            month: 'short'
+        }).replace('.', '').replace(/ /g, '');
+        
+        janela.push({
+            data: dataFormatada,
+            dataKey: dataKey,
+            valor: valor
+        });
     }
+    
+    return janela;
+}
+
+/**
+ * Obtém dados formatados para o gráfico (arrays separados)
+ * @param {string} taskId - ID da tarefa (texto-prioridade)
+ */
+function getDadosGrafico10Dias(taskId) {
+    const janela = gerarJanela10Dias(taskId);
+    
+    return {
+        labels: janela.map(d => d.data),
+        values: janela.map(d => d.valor),
+        dataKeys: janela.map(d => d.dataKey)
+    };
+}
+
+// ===== FUNÇÃO 4: getDataOrigem() (exportar para uso externo) =====
+function getDataOrigem() {
+    return encontrarDataOrigemGlobal();
+}
 
     // ===== AUTO-EXPIRAÇÃO ===== (runs at midnight)
     function setupMidnightCheck() {

@@ -1,41 +1,43 @@
-# TODO - Correção de Conflito de Dados
+# TODO - Ajuste de Janela de Visualização do Gráfico de Constância
 
-## Status: ✅ CONCLUÍDO
+## Status: ✅ CONCLUÍDO (Atualização 2)
 
-### Passos de Implementação:
+### Alterações Realizadas na getGoalHistory():
 
-- [x] 1. Analyze project structure and understand current implementation
-- [x] 2. Disable checkboxes in Checklist views (make them read-only)
-- [x] 3. Enhance Calendar data storage to save individual task completion
-- [x] 4. Rewrite getGoalHistory() to read from Calendar data
-- [x] 5. Implement proper unique IDs for tasks for proper tracking
+#### 1. Ponto de Partida (Data de Início):
+- Encontra a primeira data com registro explícito (0 ou 1) no localStorage
+- O gráfico começa na data do primeiro registro encontrado
+- Aceita tanto 'Sim' (1) quanto 'Não' (0) como primeiro registro
 
-### Alterações Realizadas:
+#### 2. Limite de 10 Dias (Janela Móvel):
+- Usa `.slice(-10)` para mostrar os 10 dias mais recentes do primeiro registro
+- Gera dados da primeira atividade até hoje (forward iteration)
+- Aplica a janela de 10 dias
 
-1. **Checklists (Diário/Semanal/Anual)** - Checkboxes foram desabilitados (atributo `disabled`). O usuário NÃO pode mais marcar conclusão nestas abas. A função `criarElementoMeta()` foi modificada para criar checkboxes somente leitura.
+#### 3. Diferenciação explícita vs Não registrado:
+- **Problema corrigido:** Antes, dias sem registro eram tratados como "não feito" (0)
+- **Solução:** Agora diferencia corretamente:
+  - Registro explícito (true) → 1 (verde, concluído)
+  - Registro explícito (false) → 0 (vermelho, NÃO concluído)
+  - Sem registro → null (não mostra no gráfico)
 
-2. **Calendário** - Agora salva o histórico individual de cada tarefa além da eficiência total. Novo formato de dados:
-   ```json
-   {
-     "2024-10-25": {
-       "eficiencia": 80,
-       "tarefas": {
-         "Estudar React|Alta|diario": true,
-         "Exercício|Média|diario": false
-       }
-     }
-   }
-   ```
+#### 4. Saída - Dados Processados:
+```javascript
+return { 
+    dates: ['05 jan', '06 jan', ...],  // Max 10 dias
+    values: [1, 0, 1, null, 0, ...],  // 1=feito, 0=não feito, null=sem registro
+    temDados: true,
+    primeiroRegistroIndex: 0
+};
+```
 
-3. **Gráficos Individuais** - A função `getGoalHistory()` agora busca dados exclusivamente do Calendário (não mais do checklist original). Cada tarefa é rastreada pelo seu ID único.
+#### 5. Visual e Cores:
+- stepped: true (degraus de 90°) ✓
+- Verde (rgb(34, 197, 94)) quando valor = 1
+- Vermelho (rgb(239, 68, 68)) quando valor = 0
 
-4. **ID Único** - Formato: `texto|prioridade|view` (ex: "Estudar React|Alta|diario")
-
-5. **Retrocompatibilidade** - O sistema mantém suporte ao formato antigo (número simples) para dados existentes.
-
-### Resultado Esperado Alcançado:
-- ✅ Checklists funcionam apenas como Checklist de Cadastro
-- ✅ A marcação de 'Concluído' acontece exclusivamente no Calendário
-- ✅ Gráficos individuais mostram a constância de cada tarefa específica
-- ✅ O gráfico geral mostra a média de tudo no calendário
-- ✅ Os gráficos individuais rastreiam o desempenho no histórico do calendário
+### Resultado:
+✅ Gráfico começa na data do primeiro registro explícito
+✅ Max 10 dias exibidos a partir do primeiro registro
+✅ Verde para concluído (1), vermelho para NÃO concluído (0)
+✅ Dias sem registro não aparecem (null)
