@@ -1,21 +1,41 @@
-# TODO - Corrigir Calendário
+# TODO - Correção de Conflito de Dados
 
-**Problema 1: Setas de navegação do mês não funcionam** ✅ CORRIGIDO
-- Causa: Dois DOMContentLoaded separados no código
-- Solução: Criada função setupCalendarNavigation() e chamada na inicialização
+## Status: ✅ CONCLUÍDO
 
-**Problema 2: Não há opção para cancelar/limpar eficiência** ✅ CORRIGIDO
-- Solução: Adicionado botão "Limpar" no modal + estilos CSS
+### Passos de Implementação:
 
-**Problema 3: Dados iam para dia errado (BUG DA CLOSURE)** ✅ CORRIGIDO
-- Causa: Event listeners capturavam o dataKey errado - closure issue
-- Solução: Armazenar dataKey no modal.dataset.currentDataKey ao abrir modal
+- [x] 1. Analyze project structure and understand current implementation
+- [x] 2. Disable checkboxes in Checklist views (make them read-only)
+- [x] 3. Enhance Calendar data storage to save individual task completion
+- [x] 4. Rewrite getGoalHistory() to read from Calendar data
+- [x] 5. Implement proper unique IDs for tasks for proper tracking
 
-**Arquivos editados:**
-- script.js - Correções + botão limpar
-- style.css - estilo .btn-limpar
+### Alterações Realizadas:
 
-**Implementado:**
-- [x] 1. Navegação entre meses funcionando
-- [x] 2. Botão "Limpar" para resetar eficiência
-- [x] 3. Dados salvos no dia correto (fix closure)
+1. **Checklists (Diário/Semanal/Anual)** - Checkboxes foram desabilitados (atributo `disabled`). O usuário NÃO pode mais marcar conclusão nestas abas. A função `criarElementoMeta()` foi modificada para criar checkboxes somente leitura.
+
+2. **Calendário** - Agora salva o histórico individual de cada tarefa além da eficiência total. Novo formato de dados:
+   ```json
+   {
+     "2024-10-25": {
+       "eficiencia": 80,
+       "tarefas": {
+         "Estudar React|Alta|diario": true,
+         "Exercício|Média|diario": false
+       }
+     }
+   }
+   ```
+
+3. **Gráficos Individuais** - A função `getGoalHistory()` agora busca dados exclusivamente do Calendário (não mais do checklist original). Cada tarefa é rastreada pelo seu ID único.
+
+4. **ID Único** - Formato: `texto|prioridade|view` (ex: "Estudar React|Alta|diario")
+
+5. **Retrocompatibilidade** - O sistema mantém suporte ao formato antigo (número simples) para dados existentes.
+
+### Resultado Esperado Alcançado:
+- ✅ Checklists funcionam apenas como Checklist de Cadastro
+- ✅ A marcação de 'Concluído' acontece exclusivamente no Calendário
+- ✅ Gráficos individuais mostram a constância de cada tarefa específica
+- ✅ O gráfico geral mostra a média de tudo no calendário
+- ✅ Os gráficos individuais rastreiam o desempenho no histórico do calendário

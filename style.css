@@ -647,6 +647,101 @@ body {
     color: var(--primary-blue-60);
 }
 
+/* Modal Dia - Tarefas */
+.modal-dia {
+    max-width: 450px;
+}
+
+.efficiency-resultado {
+    text-align: center;
+    margin: 1.5rem 0;
+    padding: 1rem;
+    background: var(--bg-secondary);
+    border-radius: 12px;
+}
+
+.eficiencia-valor {
+    font-size: 2.5rem;
+    font-weight: 800;
+}
+
+.sem-tarefas {
+    text-align: center;
+    color: var(--text-secondary);
+    font-style: italic;
+    padding: 1.5rem;
+}
+
+.tarefas-lista {
+    max-height: 250px;
+    overflow-y: auto;
+    margin-bottom: 1.5rem;
+}
+
+.tarefas-lista::-webkit-scrollbar {
+    display: none;
+}
+
+.tarefa-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 0.75rem 1rem;
+    background: var(--bg-card);
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    margin-bottom: 0.5rem;
+}
+
+.tarefa-item.concluida {
+    border-left: 4px solid var(--success);
+    background: rgba(16, 185, 129, 0.1);
+}
+
+.tarefa-texto {
+    flex: 1;
+    font-size: 0.95rem;
+    color: var(--text-primary);
+    margin-right: 1rem;
+}
+
+.tarefa-botoes {
+    display: flex;
+    gap: 0.5rem;
+}
+
+.btn-v, .btn-x {
+    width: 32px;
+    height: 32px;
+    border: 2px solid var(--border-color);
+    border-radius: 50%;
+    background: transparent;
+    cursor: pointer;
+    font-weight: bold;
+    font-size: 1rem;
+    transition: all 0.2s ease;
+}
+
+.btn-v {
+    color: var(--success);
+    border-color: var(--success);
+}
+
+.btn-v:hover, .btn-v.active {
+    background: var(--success);
+    color: white;
+}
+
+.btn-x {
+    color: var(--danger);
+    border-color: var(--danger);
+}
+
+.btn-x:hover, .btn-x.active {
+    background: var(--danger);
+    color: white;
+}
+
 @media (max-width: 768px) {
     .calendar-day {
         min-height: 50px;
@@ -853,10 +948,10 @@ body {
     border-color: rgba(239, 68, 68, 0.3);
 }
 
-.etiqueta-prioridade.media {
-    background: rgba(245, 101, 101, 0.15);
+.etiqueta-prioridade.média {
+    background: rgba(245, 158, 11, 0.15);
     color: #f59e0b;
-    border-color: rgba(245, 101, 101, 0.3);
+    border-color: rgba(245, 158, 11, 0.3);
 }
 
 .etiqueta-prioridade.baixa {

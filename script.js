@@ -345,64 +345,176 @@ function abrirModalEficiencia(dataKey, dia) {
         modal.id = 'modal-eficiencia';
         modal.className = 'modal-overlay';
         modal.innerHTML = `
-            <div class="modal">
-                <h3>Registrar Eficiência</h3>
+            <div class="modal modal-dia">
+                <h3>Eficiência do Dia</h3>
                 <p class="efficiency-date"></p>
-                <div class="efficiency-options">
-                    <button class="efficiency-btn" data-value="0">0%</button>
-                    <button class="efficiency-btn" data-value="25">25%</button>
-                    <button class="efficiency-btn" data-value="50">50%</button>
-                    <button class="efficiency-btn" data-value="75">75%</button>
-                    <button class="efficiency-btn" data-value="100">100%</button>
+                <div class="efficiency-resultado">
+                    <span class="eficiencia-valor">0%</span>
                 </div>
-                <div class="modal-actions">
-                    <button class="btn-limpar" id="btn-limpar-ef">Limpar</button>
-                    <button class="btn-cancelar" id="btn-fechar-ef">Fechar</button>
+                <div class="tarefas-lista"></div>
+<div class="modal-actions">
+                    <button class="btn-limpar" id="btn-limpar-dia">Limpar</button>
+                    <button class="btn-cancelar" id="btn-cancelar-dia">Cancelar</button>
+                    <button class="btn-confirmar" id="btn-confirmar-dia">Confirmar</button>
                 </div>
             </div>
         `;
         document.body.appendChild(modal);
 
-        modal.querySelector('.btn-cancelar').addEventListener('click', () => modal.classList.remove('active'));
+modal.querySelector('#btn-cancelar-dia').addEventListener('click', () => modal.classList.remove('active'));
         modal.addEventListener('click', (e) => e.target === modal && modal.classList.remove('active'));
         
-        // Limpar button - remove efficiency for the day (armazena o dataKey atual)
-        modal.querySelector('.btn-limpar').addEventListener('click', () => {
+        // Limpar - remove a eficiência do dia
+        modal.querySelector('#btn-limpar-dia').addEventListener('click', () => {
             const currentDataKey = modal.dataset.currentDataKey;
             const data = getCalendarData();
-            if (currentDataKey) {
+            if (currentDataKey && data[currentDataKey]) {
                 delete data[currentDataKey];
                 saveCalendarData(data);
             }
             modal.classList.remove('active');
             renderCalendar();
         });
-
-        modal.querySelectorAll('.efficiency-btn').forEach(btn => {
-            btn.addEventListener('click', () => {
-                const currentDataKey = modal.dataset.currentDataKey;
-                const valor = parseInt(btn.dataset.value);
-                const data = getCalendarData();
-                if (currentDataKey) {
-                    data[currentDataKey] = valor;
-                    saveCalendarData(data);
-                }
-                modal.classList.remove('active');
-                renderCalendar();
+        
+// Confirmar - salva o status das tarefas
+        modal.querySelector('#btn-confirmar-dia').addEventListener('click', () => {
+            const currentDataKey = modal.dataset.currentDataKey;
+            const tarefasContainer = modal.querySelector('.tarefas-lista');
+            const tarefas = tarefasContainer.querySelectorAll('.tarefa-item');
+            let total = 0;
+            let conclusas = 0;
+            
+            tarefas.forEach(tarefa => {
+                total++;
+                if (tarefa.dataset.concluida === 'true') conclusas++;
             });
+            
+            const eficiencia = total > 0 ? Math.round((conclusas / total) * 100) : 0;
+            const data = getCalendarData();
+            if (currentDataKey) {
+                data[currentDataKey] = eficiencia;
+                saveCalendarData(data);
+            }
+            modal.classList.remove('active');
+            renderCalendar();
         });
     }
 
-    // Armazenar o dataKey atual no modal para uso nos event listeners
+// Buscar tarefas DIÁRIAS do localStorage (todas, não filtrar por data)
+    // O usuário pode customizar qualquer dia, mesmo que tenha esquecido de acessar
+    const todasMetas = JSON.parse(localStorage.getItem(STORAGE_KEYS['diario']) || '[]');
+
+    // Armazenar o dataKey atual no modal
     modal.dataset.currentDataKey = dataKey;
     
     const el = modal;
-    el.querySelector('.efficiency-date').textContent = `${dia} de ${new Date(currentYear, currentMonth).toLocaleDateString('pt-BR', { month: 'long' })}`;
-    el.querySelectorAll('.efficiency-btn').forEach(btn => {
-        const val = parseInt(btn.dataset.value);
-        btn.classList.toggle('active', val === currentEff);
-    });
+el.querySelector('.efficiency-date').textContent = `${dia} de ${new Date(currentYear, currentMonth).toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' })}`;
+    
+    // Renderizar lista de tarefas
+    const tarefasContainer = el.querySelector('.tarefas-lista');
+    tarefasContainer.innerHTML = '';
+    
+    if (todasMetas.length === 0) {
+        tarefasContainer.innerHTML = '<p class="sem-tarefas">Nenhuma tarefa para este dia.</p>';
+        el.querySelector('.efficiency-resultado').innerHTML = '<span class="eficiencia-valor">--%</span>';
+    } else {
+        let conclusas = 0;
+        todasMetas.forEach((meta, index) => {
+            const tarefaEl = document.createElement('div');
+            tarefaEl.className = 'tarefa-item';
+            const jaConcluida = meta.concluida;
+            if (jaConcluida) conclusas++;
+            
+            tarefaEl.innerHTML = `
+                <span class="tarefa-texto">${meta.texto}</span>
+                <div class="tarefa-botoes">
+                    <button class="btn-v ${jaConcluida ? 'active' : ''}" data-index="${index}">✓</button>
+                    <button class="btn-x ${!jaConcluida ? 'active' : ''}" data-index="${index}">✗</button>
+                </div>
+            `;
+            
+            // Armazenar estado inicial
+            tarefaEl.dataset.concluida = jaConcluida ? 'true' : 'false';
+            
+            tarefaEl.querySelector('.btn-v').addEventListener('click', function() {
+                const item = this.closest('.tarefa-item');
+                item.classList.add('concluida');
+                item.querySelector('.btn-v').classList.add('active');
+                item.querySelector('.btn-x').classList.remove('active');
+                item.dataset.concluida = 'true';
+                atualizarEficienciaModal(modal);
+            });
+            
+            tarefaEl.querySelector('.btn-x').addEventListener('click', function() {
+                const item = this.closest('.tarefa-item');
+                item.classList.remove('concluida');
+                item.querySelector('.btn-x').classList.add('active');
+                item.querySelector('.btn-v').classList.remove('active');
+                item.dataset.concluida = 'false';
+                atualizarEficienciaModal(modal);
+            });
+            
+            tarefasContainer.appendChild(tarefaEl);
+        });
+        
+        // Calcular eficiência inicial
+        const eficiencia = Math.round((conclusas / todasMetas.length) * 100);
+        atualizarDisplayEficiencia(el, eficiencia);
+    }
+    
     el.classList.add('active');
+}
+
+function atualizarEficienciaModal(modal) {
+    // Atualiza cálculo quando usuario muda status
+    const tarefas = modal.querySelectorAll('.tarefa-item');
+    let total = 0;
+    let conclusas = 0;
+    
+    tarefas.forEach(t => {
+        total++;
+        if (t.dataset.concluida === 'true') conclusas++;
+    });
+    
+    const eficiencia = total > 0 ? Math.round((conclusas / total) * 100) : 0;
+    atualizarDisplayEficiencia(modal, eficiencia);
+}
+
+function atualizarDisplayEficiencia(modal, eficiencia) {
+    const resultadoEl = modal.querySelector('.efficiency-resultado');
+    const hsl = getEficienciaHSL(eficiencia);
+    resultadoEl.innerHTML = `<span class="eficiencia-valor" style="color: ${hsl}">${eficiencia}%</span>`;
+}
+
+function getEficienciaHSL(percent) {
+    let h, s, l;
+    
+    if (percent <= 24) {
+        // Vermelho: 0% = mais escuro, 24% = mais claro
+        h = 0;
+        s = 70 + (percent / 24) * 30; // 70% a 100%
+        l = 20 + (percent / 24) * 20; // 20% a 40%
+    } else if (percent <= 50) {
+        // Laranja
+        h = 30;
+        const t = (percent - 25) / 25;
+        s = 70 + t * 30;
+        l = 25 + t * 20;
+    } else if (percent <= 75) {
+        // Verde claro
+        h = 90;
+        const t = (percent - 51) / 24;
+        s = 50 + t * 40;
+        l = 30 + t * 20;
+    } else {
+        // Verde escuro (76-100)
+        h = 140;
+        const t = (percent - 76) / 24;
+        s = 40 + t * 30;
+        l = 25 + t * 25;
+    }
+    
+    return `hsl(${h}, ${s}%, ${l}%)`;
 }
 
 // ===== CALENDAR NAVIGATION SETUP =====
