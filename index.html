@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Gestão Pessoal - Metas</title>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.9.3/dist/confetti.browser.min.js"></script>
     <link rel="stylesheet" href="style.css">
 
 </head>
@@ -63,7 +64,8 @@
                 <li class="nav-item active" data-view="diario">📅 Diário</li>
                 <li class="nav-item" data-view="semanal">📊 Semanal</li>
                 <li class="nav-item" data-view="anual">📈 Anual</li>
-<li class="nav-item" data-view="estatisticas">📉 Estatísticas</li>
+                <li class="nav-item" data-view="estatisticas">📉 Estatísticas</li>
+                <li class="nav-item" data-view="hall-fama">🏆 Hall da Fama</li>
                 <li class="nav-item" data-view="calendario">📅 Calendário</li>
             </ul>
         </nav>
@@ -140,6 +142,15 @@
                     <span>Dom</span><span>Seg</span><span>Ter</span><span>Qua</span><span>Qui</span><span>Sex</span><span>Sáb</span>
                 </div>
                 <div class="calendar-grid" id="calendar-grid"></div>
+            </section>
+
+            <!-- Hall da Fama -->
+            <section class="goals-section hall-fama-section" id="secao-hall-fama">
+                <h2>🏆 Hall da Fama</h2>
+                <p class="section-subtitle">Suas conquistas anuais eternas</p>
+                <div id="hall-fama-container" class="hall-fama-grid">
+                    <!-- Cards dinâmicos -->
+                </div>
             </section>
         </main>
     </div>

@@ -152,13 +152,17 @@ navItems.forEach(item => {
             btnNovaMeta.style.display = 'block';
         }
         
-if (view === 'estatisticas') {
+        if (view === 'estatisticas') {
                 renderEstatisticas();
+            } else if (view === 'hall-fama') {
+                carregarHallFama();
             } else if (view === 'calendario') {
                 renderCalendar();
             } else {
                 carregarMetas(view);
             }
+            
+            currentView = view; // Track para gráficos
     });
 });
 
@@ -240,6 +244,7 @@ function carregarMetas(view) {
 const CALENDAR_STORAGE = 'calendario_dias';
 const CALENDAR_TAREFAS = 'calendario_tarefas_dia'; // NOVO: Armazena status individual por tarefa por dia
 const CICLICAS_STORAGE = 'ciclicas_tarefas_dia'; // NOVO: Armazena status de metas cíclicas (semanal/anual)
+const HALL_FAMA_STORAGE = 'hall_fama_anual'; // NOVO: Conquistas anuais permanentes
 let currentMonth = new Date().getMonth();
 let currentYear = new Date().getFullYear();
 let diaSelecionado = null;
@@ -346,10 +351,68 @@ function saveTarefasCiclicasDoDia(dataKey, tarefasStatus) {
     localStorage.setItem(CICLICAS_STORAGE, JSON.stringify(tarefasCiclicas));
 }
 
-function salvarEstadoTarefaCyclicDia(dataKey, cyclicTaskId, concluida) {
+function salvarEstadoTarefaCyclicDia(dataKey, cyclicTaskId, concluida, meta = null) {
     const tarefasCiclicasDia = getTarefasCiclicasDoDia(dataKey);
     tarefasCiclicasDia[cyclicTaskId] = concluida;
     saveTarefasCiclicasDoDia(dataKey, tarefasCiclicasDia);
+    
+    // Se é anual e concluída, salvar no Hall da Fama
+    if (meta && meta.tipo === 'anual' && concluida) {
+        salvarHallFamaConquista(meta, dataKey);
+    }
+}
+
+function salvarHallFamaConquista(meta, dataKey) {
+    let hallFama = JSON.parse(localStorage.getItem(HALL_FAMA_STORAGE) || '[]');
+    
+    const conquista = {
+        id: getCyclicTaskId(meta),
+        texto: meta.texto,
+        prioridade: meta.prioridade,
+        dataConquista: new Date().toLocaleDateString('pt-BR', { 
+            day: '2-digit', 
+            month: 'long', 
+            year: 'numeric',
+            weekday: 'long'
+        }),
+        dataKey: dataKey
+    };
+    
+    // Evitar duplicatas
+    hallFama = hallFama.filter(c => c.id !== conquista.id);
+    hallFama.unshift(conquista);
+    
+    localStorage.setItem(HALL_FAMA_STORAGE, JSON.stringify(hallFama));
+}
+
+function carregarHallFama() {
+    const container = document.getElementById('hall-fama-container');
+    if (!container) return;
+    
+    const hallFama = JSON.parse(localStorage.getItem(HALL_FAMA_STORAGE) || '[]');
+    
+    if (hallFama.length === 0) {
+        container.innerHTML = '<p class="no-data-message" style="grid-column: 1/-1; text-align: center; color: var(--text-secondary);">Nenhuma conquista anual ainda. Crie história! 🏆</p>';
+        return;
+    }
+    
+    container.innerHTML = '';
+    
+    hallFama.forEach(conquista => {
+        const card = document.createElement('div');
+        card.className = 'hall-fama-card';
+        card.innerHTML = `
+            <div class="trofeu">🏆</div>
+            <h4>${conquista.texto}</h4>
+            <div class="data-conquista">${conquista.dataConquista}</div>
+        `;
+        container.appendChild(card);
+    });
+}
+
+function isAnualConcluidaDia(dataKey, cyclicTaskId) {
+    const tarefasCiclicas = getTarefasCiclicasDoDia(dataKey);
+    return tarefasCiclicas[cyclicTaskId] === true;
 }
 
 function renderCalendar() {
@@ -471,7 +534,7 @@ modal.querySelector('#btn-cancelar-dia').addEventListener('click', () => modal.c
             // 3. Atualiza os gráficos após a limpeza
             modal.classList.remove('active');
             renderCalendar();
-            renderEstatisticas(); // Atualiza gráficos automaticamente
+            renderEstatisticas(); // Atualiza gráficos automaticamente (inclui individual charts)
         });
         
 // Confirmar - salva o status das tarefas E atualiza os gráficos
@@ -495,7 +558,7 @@ modal.querySelector('#btn-cancelar-dia').addEventListener('click', () => modal.c
             }
             modal.classList.remove('active');
             renderCalendar();
-            renderEstatisticas(); // Atualiza gráficos automaticamente
+            renderEstatisticas(); // Atualiza gráficos automaticamente (inclui individual charts)
         });
     }
 
@@ -567,25 +630,26 @@ modal.querySelector('#btn-cancelar-dia').addEventListener('click', () => modal.c
             tarefasContainer.appendChild(separador);
         }
         
-        // 3. RENDER CÍCLICAS DEPOIS
-        metasCiclicas.forEach((meta) => {
-            const tarefaEl = document.createElement('div');
-            tarefaEl.className = 'tarefa-item cyclic-task';
-            
-            const cyclicTaskId = meta.cyclicTaskId;
-            const concluidaDia = tarefasCiclicasSalvas[cyclicTaskId] !== undefined 
-                ? tarefasCiclicasSalvas[cyclicTaskId] 
-                : meta.concluida;
-            
-            if (concluidaDia) conclusas++;
-            
-            tarefaEl.innerHTML = `
-                <span class="tarefa-texto">${meta.texto} <small style="opacity: 0.7; color: var(--primary-blue-30)">(${meta.tipo})</small></span>
-                <div class="tarefa-botoes">
-                    <button class="btn-v ${concluidaDia ? 'active' : ''}" data-is-cyclic="true" data-task-id="${cyclicTaskId}">✓</button>
-                    <button class="btn-x ${!concluidaDia ? 'active' : ''}" data-is-cyclic="true" data-task-id="${cyclicTaskId}">✗</button>
-                </div>
-            `;
+            // 3. RENDER CÍCLICAS DEPOIS
+            metasCiclicas.forEach((meta) => {
+                const tarefaEl = document.createElement('div');
+                tarefaEl.className = 'tarefa-item cyclic-task';
+                tarefaEl.dataset.metaTipo = meta.tipo;
+                
+                const cyclicTaskId = meta.cyclicTaskId;
+                const concluidaDia = tarefasCiclicasSalvas[cyclicTaskId] !== undefined 
+                    ? tarefasCiclicasSalvas[cyclicTaskId] 
+                    : meta.concluida;
+                
+                if (concluidaDia) conclusas++;
+                
+                tarefaEl.innerHTML = `
+                    <span class="tarefa-texto">${meta.texto} <small style="opacity: 0.7; color: var(--primary-blue-30)">(${meta.tipo})</small></span>
+                    <div class="tarefa-botoes">
+                        <button class="btn-v ${concluidaDia ? 'active' : ''}" data-is-cyclic="true" data-task-id="${cyclicTaskId}">✓</button>
+                        <button class="btn-x ${!concluidaDia ? 'active' : ''}" data-is-cyclic="true" data-task-id="${cyclicTaskId}">✗</button>
+                    </div>
+                `;
             
             tarefaEl.dataset.concluida = concluidaDia ? 'true' : 'false';
             tarefaEl.dataset.taskId = cyclicTaskId;
@@ -611,16 +675,44 @@ modal.querySelector('#btn-cancelar-dia').addEventListener('click', () => modal.c
             
             atualizarEficienciaModal(modal);
             
-            // Salvar baseado no tipo
+            // Salvar baseado no tipo - SEMPRE salva em calendario_tarefas_dia[taskId normal] para gráficos
             const dataKeyLocal = modal.dataset.currentDataKey;
             const taskIdLocal = tarefaEl.dataset.taskId;
             const isCyclicLocal = tarefaEl.dataset.isCyclic === 'true';
+            const metaTipoLocal = tarefaEl.dataset.metaTipo || '';
+            
+            // SALVAR SEMPRE EM CALENDAR_TAREFAS para compatibilidade com gráficos individuais
+            salvarEstadoTarefaDia(dataKeyLocal, taskIdLocal, isCheck);
             
             if (isCyclicLocal) {
-                salvarEstadoTarefaCyclicDia(dataKeyLocal, taskIdLocal, isCheck);
-            } else {
-                salvarEstadoTarefaDia(dataKeyLocal, taskIdLocal, isCheck);
+                // ADICIONAL: Salvar também em cyclic se necessário (anual hall)
+                const todasCiclicas = renderizarMetasCiclicas(dataKeyLocal);
+                const meta = todasCiclicas.find(m => m.cyclicTaskId === taskIdLocal);
+                if (meta) {
+                    salvarEstadoTarefaCyclicDia(dataKeyLocal, taskIdLocal, isCheck, meta);
+                }
+                
+                // Animação anual
+                if (isCheck && metaTipoLocal === 'anual') {
+                    if (window.confetti) {
+                        confetti({
+                            particleCount: 100,
+                            spread: 70,
+                            origin: { y: 0.6 },
+                            colors: ['#fbbf24', '#f59e0b', '#d97706']
+                        });
+                    }
+                    const toast = document.createElement('div');
+                    toast.className = 'motivacao-toast';
+                    toast.textContent = '🏆 CONQUISTA ANUAL! Você é lendário! 🔥';
+                    document.body.appendChild(toast);
+                    setTimeout(() => toast.remove(), 3500);
+                }
             }
+            
+            // FORCE UPDATE GRÁFICOS - destroy + recreate garante dados frescos
+            if (chartInstance) chartInstance.destroy();
+            renderIndividualCharts();
         }
         
         // Calcular eficiência inicial baseada no total (daily + cyclic)
@@ -705,10 +797,10 @@ function setupCalendarNavigation() {
 
 // ===== ESTATÍSTICAS =====
 function atualizarEstatisticas() {
-        // Total de metas cadastradas (lista global)
+        // Total de metas cadastradas (apenas goals: diario, semanal, anual)
         let totalMetas = 0;
-        Object.keys(STORAGE_KEYS).forEach(key => {
-            if (key === 'stats') return;
+        const goalKeys = ['diario', 'semanal', 'anual'];
+        goalKeys.forEach(key => {
             const metas = JSON.parse(localStorage.getItem(STORAGE_KEYS[key]) || '[]');
             totalMetas += metas.length;
         });
@@ -721,7 +813,7 @@ function atualizarEstatisticas() {
         
         // Iterar sobre todos os dias no calendario_dias
         Object.keys(calendarData).forEach(dataKey => {
-            const eficiencia = calendarData[dataKey];
+            const eficiencia = (calendarData[dataKey] || 0);
             if (eficiencia !== undefined) {
                 diasAtivos.add(dataKey);
                 somaEficiencias += eficiencia;
@@ -843,10 +935,9 @@ plugins: {
         
         container.innerHTML = '';
         
-        // Get all unique goals from all views
+        // Get all unique goals from daily/semanal only (anual → Hall da Fama)
         const allGoals = new Map();
-        Object.keys(STORAGE_KEYS).forEach(key => {
-            if (key === 'stats') return;
+        ['diario', 'semanal'].forEach(key => {
             const metas = JSON.parse(localStorage.getItem(STORAGE_KEYS[key]) || '[]');
             metas.forEach(meta => {
                 const id = `${meta.texto}-${meta.prioridade}`;
@@ -865,9 +956,9 @@ allGoals.forEach((meta, id) => {
             const chartContainer = document.createElement('div');
             chartContainer.className = 'individual-chart-card';
             
-            // Get history data from JANELA DESLIZANTE FIXA DE 10 DIAS
+            // Get history data: pass meta for cyclic lookup
             const taskId = `${meta.texto}-${meta.prioridade}`;
-            const dadosJanela = gerarJanela10Dias(taskId);
+            const dadosJanela = meta.view === 'semanal' ? gerarJanela4Semanas(taskId, meta) : gerarJanela10Dias(taskId, meta);
             
             chartContainer.innerHTML = `
                 <h4>${meta.texto}</h4>
@@ -913,7 +1004,7 @@ allGoals.forEach((meta, id) => {
                 // Preparar array de cores dos pontos
                 const pointColors = values.map((v, i) => getPointColor(v, temRegistro[i], explicitamenteNao[i]));
                 
-                individualCharts[id] = new Chart(ctx, {
+individualCharts[id] = new Chart(ctx, {
                     type: 'line',
                     data: {
                         labels: labels,
@@ -921,8 +1012,7 @@ allGoals.forEach((meta, id) => {
                             label: 'Concluída',
                             data: values,
                             borderWidth: 3,
-                            // Estilo de Degrau com 90°
-                            stepped: true,
+                            stepped: 'middle', // Degrau suave no meio
                             tension: 0,
                             // fill: true ATIVADO para forçar área verde quando y=1
                             fill: true,
@@ -1071,37 +1161,60 @@ function getGoalHistory(texto, prioridade, view) {
     };
 }
 
-// ===== JANELA DESLIZANTE FIXA DE 10 DIAS =====
+// ===== HELPER: Get task status from BOTH storages =====
 /**
- * Gera janela deslizante fixa de 10 dias (Hoje-9 até Hoje)
- * Saída: Array fixo de 10 posições sempre, mesmo sem dados
- * Cada objeto contém: data, dataKey, valor, temRegistro, explicitamenteNao
+ * Checks task status in calendario_tarefas_dia first, then ciclicas_tarefas_dia
+ * @param {string} dataKey - YYYY-MM-DD
+ * @param {string} simpleTaskId - texto-prioridade
+ * @param {boolean} isWeekly - if true, also check cyclic ID
+ * @param {object} meta - meta object for cyclicId reconstruction
+ * @returns {object} {valor: 0/1, temRegistro: bool, explicitamenteNao: bool}
  */
-function gerarJanela10Dias(taskId) {
+function getTaskStatus(dataKey, simpleTaskId, isWeekly = false, meta = null) {
+    // 1. Check daily storage first (always)
+    const tarefasDia = JSON.parse(localStorage.getItem('calendario_tarefas_dia') || '{}');
+    let status = tarefasDia[dataKey]?.[simpleTaskId];
+    if (status !== undefined) {
+        return {
+            valor: status === true ? 1 : 0,
+            temRegistro: true,
+            explicitamenteNao: status === false
+        };
+    }
+
+    if (isWeekly && meta) {
+        // 2. Fallback: reconstruct cyclic ID and check cyclic storage
+        const cyclicTaskId = getCyclicTaskId(meta);
+        const tarefasCiclicas = JSON.parse(localStorage.getItem('ciclicas_tarefas_dia') || '{}');
+        status = tarefasCiclicas[dataKey]?.[cyclicTaskId];
+        if (status !== undefined) {
+            return {
+                valor: status === true ? 1 : 0,
+                temRegistro: true,
+                explicitamenteNao: status === false
+            };
+        }
+    }
+
+    // 3. No record
+    return { valor: 0, temRegistro: false, explicitamenteNao: false };
+}
+
+// ===== JANELA DESLIZANTE FIXA DE 10 DIAS (Daily) =====
+/**
+ * Gera janela deslizante fixa de 10 dias (Hoje-9 até Hoje) - DAILY ONLY
+ */
+function gerarJanela10Dias(taskId, meta) {
     const hoje = new Date();
-    const tarefasCalendar = JSON.parse(localStorage.getItem('calendario_tarefas_dia') || '{}');
     const janela = [];
     
-    // Loop de Hoje-9 até Hoje (10 dias fixos)
     for (let i = 9; i >= 0; i--) {
         const dia = new Date(hoje);
         dia.setDate(dia.getDate() - i);
-        
-        // DataKey no formato YYYY-MM-DD
         const dataKey = `${dia.getFullYear()}-${String(dia.getMonth() + 1).padStart(2, '0')}-${String(dia.getDate()).padStart(2, '0')}`;
         
-        // Verificar se há registro no localStorage para esta data
-        let temRegistro = false;
-        let explicitamenteNao = false;
-        let valor = 0;
+        const status = getTaskStatus(dataKey, taskId, false, null);
         
-        if (tarefasCalendar[dataKey] && tarefasCalendar[dataKey][taskId] !== undefined) {
-            temRegistro = true;
-            explicitamenteNao = tarefasCalendar[dataKey][taskId] === false;
-            valor = tarefasCalendar[dataKey][taskId] === true ? 1 : 0;
-        }
-        
-// Formatar data curta: 22 Abr (COM ESPAÇO para legibilidade)
         const dataFormatada = dia.toLocaleDateString('pt-BR', {
             day: '2-digit',
             month: 'short'
@@ -1110,14 +1223,48 @@ function gerarJanela10Dias(taskId) {
         janela.push({
             data: dataFormatada,
             dataKey: dataKey,
-            valor: valor,
-            temRegistro: temRegistro,
-            explicitamenteNao: explicitamenteNao
+            valor: status.valor,
+            temRegistro: status.temRegistro,
+            explicitamenteNao: status.explicitamenteNao
         });
     }
     
     return janela;
 }
+
+
+/**
+ * Gera janela fixa de 4 semanas (Hoje-21, -14, -7, Hoje) - WEEKLY with cyclic fallback
+ */
+function gerarJanela4Semanas(taskId, meta) {
+    const hoje = new Date();
+    const janela = [];
+    const offsets = [21, 14, 7, 0];
+    
+    offsets.forEach(offset => {
+        const dia = new Date(hoje);
+        dia.setDate(dia.getDate() - offset);
+        const dataKey = `${dia.getFullYear()}-${String(dia.getMonth() + 1).padStart(2, '0')}-${String(dia.getDate()).padStart(2, '0')}`;
+        
+        const status = getTaskStatus(dataKey, taskId, true, meta);
+        
+        const dataFormatada = dia.toLocaleDateString('pt-BR', {
+            day: '2-digit',
+            month: 'short'
+        }).replace('.', '');
+        
+        janela.push({
+            data: dataFormatada,
+            dataKey: dataKey,
+            valor: status.valor,
+            temRegistro: status.temRegistro,
+            explicitamenteNao: status.explicitamenteNao
+        });
+    });
+    
+    return janela;
+}
+
 
 /**
  * Obtém dados formatados para o gráfico (arrays separados)

@@ -614,6 +614,27 @@ body {
 .calendar-day.high-25 { background: #f97316; color: white; }
 .calendar-day.high-0 { background: #ef4444; color: white; }
 
+.calendar-day.gold-border {
+    border: 3px solid #facc15 !important;
+    box-shadow: 0 0 20px rgba(253, 224, 71, 0.6), inset 0 0 20px rgba(253, 224, 71, 0.3);
+    background: linear-gradient(145deg, rgba(253, 224, 71, 0.15), transparent) !important;
+    position: relative;
+}
+
+.calendar-day.gold-border::after {
+    content: '🏆';
+    position: absolute;
+    font-size: 0.8rem;
+    top: 2px;
+    right: 2px;
+    animation: goldPulse 2s infinite;
+}
+
+@keyframes goldPulse {
+    0%, 100% { opacity: 0.7; transform: scale(1); }
+    50% { opacity: 1; transform: scale(1.2); }
+}
+
 .calendar-day .efficiency-label {
     font-size: 0.7rem;
     margin-top: 2px;
@@ -802,6 +823,153 @@ body {
 .btn-confirmar:hover {
     transform: translateY(-2px);
     box-shadow: var(--shadow-hover);
+}
+
+/* Hall da Fama */
+.hall-fama-section {
+    padding: 1rem 0;
+}
+
+.hall-fama-section .section-subtitle {
+    color: var(--text-secondary);
+    margin-bottom: 2rem;
+    font-size: 1.1rem;
+    text-align: center;
+}
+
+.hall-fama-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+    gap: 1.5rem;
+}
+
+.hall-fama-card {
+    background: linear-gradient(145deg, rgba(253, 224, 71, 0.15), rgba(251, 191, 36, 0.1));
+    border: 2px solid #facc15;
+    border-radius: 20px;
+    padding: 2rem;
+    text-align: center;
+    box-shadow: 
+        0 10px 30px rgba(250, 204, 21, 0.3),
+        0 0 40px rgba(253, 224, 71, 0.2),
+        inset 0 1px 0 rgba(255, 255, 255, 0.5);
+    position: relative;
+    overflow: hidden;
+    transition: all 0.4s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+    backdrop-filter: blur(10px);
+}
+
+.hall-fama-card::before {
+    content: '';
+    position: absolute;
+    top: -50%;
+    left: -50%;
+    width: 200%;
+    height: 200%;
+    background: radial-gradient(circle, rgba(253, 224, 71, 0.1) 0%, transparent 70%);
+    animation: hallGlow 3s ease-in-out infinite;
+    z-index: 0;
+}
+
+@keyframes hallGlow {
+    0%, 100% { transform: scale(1) rotate(0deg); opacity: 0.5; }
+    50% { transform: scale(1.1) rotate(180deg); opacity: 1; }
+}
+
+.hall-fama-card:hover {
+    transform: translateY(-10px) scale(1.02);
+    box-shadow: 
+        0 20px 50px rgba(250, 204, 21, 0.4),
+        0 0 60px rgba(253, 224, 71, 0.4);
+}
+
+.hall-fama-card > * {
+    position: relative;
+    z-index: 1;
+}
+
+.hall-fama-card .trofeu {
+    font-size: 3rem;
+    margin-bottom: 1rem;
+    filter: drop-shadow(0 4px 8px rgba(253, 224, 71, 0.5));
+    animation: trofeuBounce 2s ease-in-out infinite;
+}
+
+@keyframes trofeuBounce {
+    0%, 100% { transform: translateY(0); }
+    50% { transform: translateY(-10px); }
+}
+
+.hall-fama-card h4 {
+    font-size: 1.4rem;
+    color: #b45309;
+    margin-bottom: 0.5rem;
+    font-weight: 700;
+}
+
+.hall-fama-card .data-conquista {
+    color: var(--text-secondary);
+    font-size: 1rem;
+    font-weight: 500;
+}
+
+/* Toast Motivacional */
+.motivacao-toast {
+    position: fixed;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    background: linear-gradient(135deg, #fbbf24, #f59e0b);
+    color: #92400e;
+    padding: 2rem 3rem;
+    border-radius: 24px;
+    font-size: 1.8rem;
+    font-weight: 800;
+    box-shadow: 0 25px 50px rgba(251, 191, 36, 0.4);
+    z-index: 3000;
+    max-width: 90vw;
+    text-align: center;
+    animation: toastPop 0.5s cubic-bezier(0.68, -0.55, 0.265, 1.55), toastFade 3s 2.5s forwards;
+}
+
+@keyframes toastPop {
+    0% { transform: translate(-50%, -50%) scale(0.5); opacity: 0; }
+    80% { transform: translate(-50%, -50%) scale(1.05); opacity: 1; }
+    100% { transform: translate(-50%, -50%) scale(1); opacity: 1; }
+}
+
+@keyframes toastFade {
+    to { opacity: 0; transform: translate(-50%, -50%) translateY(-20px) scale(0.9); }
+}
+
+.confetti-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100vw;
+    height: 100vh;
+    pointer-events: none;
+    z-index: 2500;
+}
+
+@media (max-width: 768px) {
+    .hall-fama-grid {
+        grid-template-columns: 1fr;
+        gap: 1rem;
+    }
+    
+    .hall-fama-card {
+        padding: 1.5rem;
+    }
+    
+    .hall-fama-card .trofeu {
+        font-size: 2.5rem;
+    }
+    
+    .motivacao-toast {
+        font-size: 1.4rem;
+        padding: 1.5rem 2rem;
+    }
 }
 
 @keyframes fadeInModal {

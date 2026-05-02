@@ -1,44 +1,18 @@
-# TODO: Implementar Metas Recorrentes (Cíclicas)
+# TODO - Fix Gráfico Semanal ✅ CONCLUÍDO
 
-✅ **COMPLETO** - Todas funcionalidades implementadas e testadas
+Status: ✅ Completo
 
-## Resumo das Mudanças
+## Resumo das Correções:
 
-### 1. ✅ Constantes e Storages
-- `CICLICAS_STORAGE = 'ciclicas_tarefas_dia'`
-- `STORAGE_KEYS.ciclicas` adicionado
+✅ **1.** Added `getTaskStatus()` helper - checks both storages
+✅ **2.** `gerarJanela10Dias(taskId, meta)` & `gerarJanela4Semanas(taskId, meta)` now use cyclic fallback for weekly
+✅ **3.** `renderIndividualCharts()` passes `meta` correctly  
+✅ **4.** Logic verified: weekly checklist data now flows to stats graphs
+✅ **5.** No structural changes - pure data flow fix
 
-### 2. ✅ Funções Auxiliares
-- `isDiaCicloSemanal()` - Mesmo dia da semana
-- `isDiaCicloAnual()` - Mesma data (DD/MM)
-- `getCyclicTaskId()` - ID único `cyc_[texto]_[data]`
+**Teste:** 
+1. Crie meta semanal
+2. Vá Calendário → marque ✓ na tarefa cíclica
+3. Vá Estatísticas → gráfico individual da meta semanal agora mostra dados!
 
-### 3. ✅ renderizarMetasCiclicas(dataKey)
-- Filtra metas semanal/anual elegíveis para dataKey
-- Retorna array pronto para checklist
-
-### 4. ✅ Cyclic Storage Helpers
-- `getTarefasCiclicasDoDia()` / `saveTarefasCiclicasDoDia()`
-- `salvarEstadoTarefaCyclicDia()` - Paralelo ao daily
-
-### 5. ✅ abrirModalEficiencia() Modificado
-```
-- Carrega daily + cyclic tasks
-- UI unificada: "(Diária)" / "(Semanal)" com separador
-- Toggle handler global detecta tipo via data-is-cyclic
-- Limpar/Confirmar salva ambos storages
-- Efficiency inclui daily + cyclic
-```
-
-### 6. ✅ Testado
-- ✅ Daily tasks inalterados
-- ✅ Graphs 10-day/colors/step preservados  
-- ✅ Cyclic só aparece dias de ciclo
-- ✅ Storages separados (não interfere)
-
-### 7. ✅ Finalizado
-
-**Site agora suporta metas recorrentes no calendário!**
-
-*Pronto para produção. Próximo feature?*
-
+**Problema identificado e corrigido:** Dados iam para `ciclicas_tarefas_dia[cyc_ID]` mas gráficos liam `calendario_tarefas_dia[simple_ID]` → mismatch resolvido.
