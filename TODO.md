@@ -1,43 +1,44 @@
-# TODO - Ajuste de Janela de Visualização do Gráfico de Constância
+# TODO: Implementar Metas Recorrentes (Cíclicas)
 
-## Status: ✅ CONCLUÍDO (Atualização 2)
+✅ **COMPLETO** - Todas funcionalidades implementadas e testadas
 
-### Alterações Realizadas na getGoalHistory():
+## Resumo das Mudanças
 
-#### 1. Ponto de Partida (Data de Início):
-- Encontra a primeira data com registro explícito (0 ou 1) no localStorage
-- O gráfico começa na data do primeiro registro encontrado
-- Aceita tanto 'Sim' (1) quanto 'Não' (0) como primeiro registro
+### 1. ✅ Constantes e Storages
+- `CICLICAS_STORAGE = 'ciclicas_tarefas_dia'`
+- `STORAGE_KEYS.ciclicas` adicionado
 
-#### 2. Limite de 10 Dias (Janela Móvel):
-- Usa `.slice(-10)` para mostrar os 10 dias mais recentes do primeiro registro
-- Gera dados da primeira atividade até hoje (forward iteration)
-- Aplica a janela de 10 dias
+### 2. ✅ Funções Auxiliares
+- `isDiaCicloSemanal()` - Mesmo dia da semana
+- `isDiaCicloAnual()` - Mesma data (DD/MM)
+- `getCyclicTaskId()` - ID único `cyc_[texto]_[data]`
 
-#### 3. Diferenciação explícita vs Não registrado:
-- **Problema corrigido:** Antes, dias sem registro eram tratados como "não feito" (0)
-- **Solução:** Agora diferencia corretamente:
-  - Registro explícito (true) → 1 (verde, concluído)
-  - Registro explícito (false) → 0 (vermelho, NÃO concluído)
-  - Sem registro → null (não mostra no gráfico)
+### 3. ✅ renderizarMetasCiclicas(dataKey)
+- Filtra metas semanal/anual elegíveis para dataKey
+- Retorna array pronto para checklist
 
-#### 4. Saída - Dados Processados:
-```javascript
-return { 
-    dates: ['05 jan', '06 jan', ...],  // Max 10 dias
-    values: [1, 0, 1, null, 0, ...],  // 1=feito, 0=não feito, null=sem registro
-    temDados: true,
-    primeiroRegistroIndex: 0
-};
+### 4. ✅ Cyclic Storage Helpers
+- `getTarefasCiclicasDoDia()` / `saveTarefasCiclicasDoDia()`
+- `salvarEstadoTarefaCyclicDia()` - Paralelo ao daily
+
+### 5. ✅ abrirModalEficiencia() Modificado
+```
+- Carrega daily + cyclic tasks
+- UI unificada: "(Diária)" / "(Semanal)" com separador
+- Toggle handler global detecta tipo via data-is-cyclic
+- Limpar/Confirmar salva ambos storages
+- Efficiency inclui daily + cyclic
 ```
 
-#### 5. Visual e Cores:
-- stepped: true (degraus de 90°) ✓
-- Verde (rgb(34, 197, 94)) quando valor = 1
-- Vermelho (rgb(239, 68, 68)) quando valor = 0
+### 6. ✅ Testado
+- ✅ Daily tasks inalterados
+- ✅ Graphs 10-day/colors/step preservados  
+- ✅ Cyclic só aparece dias de ciclo
+- ✅ Storages separados (não interfere)
 
-### Resultado:
-✅ Gráfico começa na data do primeiro registro explícito
-✅ Max 10 dias exibidos a partir do primeiro registro
-✅ Verde para concluído (1), vermelho para NÃO concluído (0)
-✅ Dias sem registro não aparecem (null)
+### 7. ✅ Finalizado
+
+**Site agora suporta metas recorrentes no calendário!**
+
+*Pronto para produção. Próximo feature?*
+

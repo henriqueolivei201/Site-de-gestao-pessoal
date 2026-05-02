@@ -34,7 +34,8 @@ document.addEventListener('DOMContentLoaded', function() {
         diario: 'metas_diario',
         semanal: 'metas_semanal',
         anual: 'metas_anual',
-        stats: 'estatisticas_geral'
+        stats: 'estatisticas_geral',
+        ciclicas: 'ciclicas_tarefas_dia'
     };
 
     let prioridadeSelecionada = 'Média';
@@ -174,27 +175,16 @@ if (view === 'estatisticas') {
         return diasPassados > prazoDias && !meta.concluida;
     }
 
-    function criarElementoMeta(texto, prioridade, view) {
+function criarElementoMeta(texto, prioridade, view) {
         const article = document.createElement('article');
         article.className = 'goal-item';
-        const vencida = false; // Para novas sempre falsa
         article.innerHTML = `
-            <input type="checkbox" class="checkbox-meta" ${false ? 'checked' : ''}>
-            <label class="goal-text">${texto}</label>
+            <span class="goal-texto">${texto}</span>
             <span class="etiqueta-prioridade ${prioridade.toLowerCase()}">${prioridade}</span>
-            ${isMetaVencida({dataCriacao: new Date().toISOString()}, view) ? `<span class="status-badge status-vencida">Vencida</span>` : ''}
             <button class="btn-excluir" aria-label="Excluir meta">&times;</button>
         `;
         
-        const checkbox = article.querySelector('.checkbox-meta');
-        const goalTextEl = article.querySelector('.goal-text');
         const deleteBtn = article.querySelector('.btn-excluir');
-        
-        checkbox.addEventListener('change', () => {
-            goalTextEl.classList.toggle('concluida', checkbox.checked);
-            salvarEstadoCheckbox(article, checkbox.checked, texto, prioridade, view);
-            atualizarEstatisticas();
-        });
         
         deleteBtn.addEventListener('click', () => {
             removerMeta(view, texto);
@@ -233,7 +223,7 @@ if (view === 'estatisticas') {
         }
     }
 
-    function carregarMetas(view) {
+function carregarMetas(view) {
         const container = document.getElementById(`lista-${view}`);
         if (!container) return;
 
@@ -242,20 +232,6 @@ if (view === 'estatisticas') {
         
         metas.forEach(meta => {
             const elemento = criarElementoMeta(meta.texto, meta.prioridade, view);
-            const checkbox = elemento.querySelector('.checkbox-meta');
-            const goalText = elemento.querySelector('.goal-text');
-            
-            checkbox.checked = meta.concluida || false;
-            if (meta.concluida) goalText.classList.add('concluida');
-            
-            // Status badge
-            if (isMetaVencida(meta, view)) {
-                const badge = document.createElement('span');
-                badge.className = 'status-badge status-vencida';
-                badge.textContent = 'Vencida';
-                elemento.querySelector('.etiqueta-prioridade').after(badge);
-            }
-            
             container.appendChild(elemento);
         });
     }
@@ -263,6 +239,7 @@ if (view === 'estatisticas') {
 // ===== CALENDÁRIO =====
 const CALENDAR_STORAGE = 'calendario_dias';
 const CALENDAR_TAREFAS = 'calendario_tarefas_dia'; // NOVO: Armazena status individual por tarefa por dia
+const CICLICAS_STORAGE = 'ciclicas_tarefas_dia'; // NOVO: Armazena status de metas cíclicas (semanal/anual)
 let currentMonth = new Date().getMonth();
 let currentYear = new Date().getFullYear();
 let diaSelecionado = null;
@@ -293,6 +270,86 @@ function salvarEstadoTarefaDia(dataKey, taskId, concluida) {
     const tarefasDia = getTarefasDoDia(dataKey);
     tarefasDia[taskId] = concluida;
     saveTarefasDoDia(dataKey, tarefasDia);
+}
+
+// ===== NOVAS FUNÇÕES PARA METAS CÍCLICAS =====
+// Verifica se dataKey é dia de ciclo para meta semanal (mesmo dia da semana da criação)
+function isDiaCicloSemanal(meta, dataKey) {
+    const dataCriacao = new Date(meta.dataCriacao);
+    const dataHoje = new Date(dataKey + 'T00:00:00');
+    return dataCriacao.getDay() === dataHoje.getDay();
+}
+
+// Verifica se dataKey é dia de ciclo para meta anual (mesma data)
+function isDiaCicloAnual(meta, dataKey) {
+    const dataHoje = new Date(dataKey + 'T00:00:00');
+    const anoHoje = dataHoje.getFullYear();
+    const mesHoje = String(dataHoje.getMonth() + 1).padStart(2, '0');
+    const diaHoje = String(dataHoje.getDate()).padStart(2, '0');
+    const dataCicloEsperada = `${anoHoje}-${mesHoje}-${diaHoje}`;
+    // Meta anual criada em 02/05 aparece todo 02/05, independentemente do ano
+    return dataKey.startsWith(`${anoHoje}-${mesHoje}-${diaHoje}`);
+}
+
+// Gera taskId único para metas cíclicas: 'cyc_[texto-prioridade]_[dataCriacao curta]'
+function getCyclicTaskId(meta) {
+    const dataCurta = meta.dataCriacao.split('T')[0].replace(/-/g, '');
+    return `cyc_${meta.texto.replace(/[^a-zA-Z0-9]/g, '_')}-${meta.prioridade}_${dataCurta}`;
+}
+
+// ===== FUNÇÃO PRINCIPAL: renderizarMetasCiclicas(dataKey) =====
+/**
+ * Retorna metas semanal/anual elegíveis para checklist NO EXATO dataKey
+ * - Semanal: mesmo dia da semana da criação
+ * - Anual: mesma data (DD/MM) independente do ano
+ * Formato: [{texto, prioridade, tipo: 'semanal'|'anual', cyclicTaskId, dataOrigem}]
+ */
+function renderizarMetasCiclicas(dataKey) {
+    const metasCiclicas = [];
+
+    // Carregar metas_semanal
+    const metasSemanais = JSON.parse(localStorage.getItem(STORAGE_KEYS.semanal) || '[]');
+    metasSemanais.forEach(meta => {
+        if (isDiaCicloSemanal(meta, dataKey)) {
+            metasCiclicas.push({
+                ...meta,
+                tipo: 'semanal',
+                cyclicTaskId: getCyclicTaskId(meta)
+            });
+        }
+    });
+
+    // Carregar metas_anual
+    const metasAnuais = JSON.parse(localStorage.getItem(STORAGE_KEYS.anual) || '[]');
+    metasAnuais.forEach(meta => {
+        if (isDiaCicloAnual(meta, dataKey)) {
+            metasCiclicas.push({
+                ...meta,
+                tipo: 'anual',
+                cyclicTaskId: getCyclicTaskId(meta)
+            });
+        }
+    });
+
+    return metasCiclicas;
+}
+
+// ===== HELPERS PARA STORAGE CÍCLICO (Paralelo ao Daily) =====
+function getTarefasCiclicasDoDia(dataKey) {
+    const tarefasCiclicas = JSON.parse(localStorage.getItem(CICLICAS_STORAGE) || '{}');
+    return tarefasCiclicas[dataKey] || {};
+}
+
+function saveTarefasCiclicasDoDia(dataKey, tarefasStatus) {
+    const tarefasCiclicas = JSON.parse(localStorage.getItem(CICLICAS_STORAGE) || '{}');
+    tarefasCiclicas[dataKey] = tarefasStatus;
+    localStorage.setItem(CICLICAS_STORAGE, JSON.stringify(tarefasCiclicas));
+}
+
+function salvarEstadoTarefaCyclicDia(dataKey, cyclicTaskId, concluida) {
+    const tarefasCiclicasDia = getTarefasCiclicasDoDia(dataKey);
+    tarefasCiclicasDia[cyclicTaskId] = concluida;
+    saveTarefasCiclicasDoDia(dataKey, tarefasCiclicasDia);
 }
 
 function renderCalendar() {
@@ -397,11 +454,18 @@ modal.querySelector('#btn-cancelar-dia').addEventListener('click', () => modal.c
                 saveCalendarData(data);
             }
             
-            // 2. Remove todas as tarefas individuais deste dia em calendario_tarefas_dia
+// 2. Remove daily tasks deste dia
             const tarefasDia = JSON.parse(localStorage.getItem(CALENDAR_TAREFAS) || '{}');
             if (tarefasDia[currentDataKey]) {
                 delete tarefasDia[currentDataKey];
                 localStorage.setItem(CALENDAR_TAREFAS, JSON.stringify(tarefasDia));
+            }
+            
+            // 3. Remove cyclic tasks deste dia
+            const tarefasCiclicas = JSON.parse(localStorage.getItem(CICLICAS_STORAGE) || '{}');
+            if (tarefasCiclicas[currentDataKey]) {
+                delete tarefasCiclicas[currentDataKey];
+                localStorage.setItem(CICLICAS_STORAGE, JSON.stringify(tarefasCiclicas));
             }
             
             // 3. Atualiza os gráficos após a limpeza
@@ -438,6 +502,12 @@ modal.querySelector('#btn-cancelar-dia').addEventListener('click', () => modal.c
 // Buscar tarefas DIÁRIAS do localStorage (todas, não filtrar por data)
     // O usuário pode customizar qualquer dia, mesmo que tenha esquecido de acessar
     const todasMetas = JSON.parse(localStorage.getItem(STORAGE_KEYS['diario']) || '[]');
+    
+    // NOVO: Buscar metas cíclicas elegíveis para HOJE
+    const metasCiclicas = renderizarMetasCiclicas(dataKey);
+    
+    // NOVO: Buscar estados cíclicos salvos para este dia
+    const tarefasCiclicasSalvas = getTarefasCiclicasDoDia(dataKey);
 
 // Armazenar o dataKey atual no modal
     modal.dataset.currentDataKey = dataKey;
@@ -452,17 +522,18 @@ modal.querySelector('#btn-cancelar-dia').addEventListener('click', () => modal.c
     const tarefasContainer = el.querySelector('.tarefas-lista');
     tarefasContainer.innerHTML = '';
     
-    if (todasMetas.length === 0) {
+    const totalTasks = todasMetas.length + metasCiclicas.length;
+    if (totalTasks === 0) {
         tarefasContainer.innerHTML = '<p class="sem-tarefas">Nenhuma tarefa para este dia.</p>';
         el.querySelector('.efficiency-resultado').innerHTML = '<span class="eficiencia-valor">--%</span>';
     } else {
         let conclusas = 0;
-        todasMetas.forEach((meta, index) => {
+        
+        // 1. RENDER DAILY TASKS PRIMEIRO (preservar ordem)
+        todasMetas.forEach((meta) => {
             const tarefaEl = document.createElement('div');
             tarefaEl.className = 'tarefa-item';
             
-            // NOVO: Verificar se há estado salvo para esta tarefa neste dia
-            // Se não houver, usar o estado atual da meta como padrão
             const taskId = `${meta.texto}-${meta.prioridade}`;
             const concluidaDia = tarefasDiaSalvo[taskId] !== undefined 
                 ? tarefasDiaSalvo[taskId] 
@@ -471,44 +542,89 @@ modal.querySelector('#btn-cancelar-dia').addEventListener('click', () => modal.c
             if (concluidaDia) conclusas++;
             
             tarefaEl.innerHTML = `
-                <span class="tarefa-texto">${meta.texto}</span>
+                <span class="tarefa-texto">${meta.texto} <small style="opacity: 0.7">(Diária)</small></span>
                 <div class="tarefa-botoes">
-                    <button class="btn-v ${concluidaDia ? 'active' : ''}" data-task-id="${taskId}">✓</button>
-                    <button class="btn-x ${!concluidaDia ? 'active' : ''}" data-task-id="${taskId}">✗</button>
+                    <button class="btn-v ${concluidaDia ? 'active' : ''}" data-is-cyclic="false" data-task-id="${taskId}">✓</button>
+                    <button class="btn-x ${!concluidaDia ? 'active' : ''}" data-is-cyclic="false" data-task-id="${taskId}">✗</button>
                 </div>
             `;
             
-            // Armazenar estado inicial
             tarefaEl.dataset.concluida = concluidaDia ? 'true' : 'false';
             tarefaEl.dataset.taskId = taskId;
+            tarefaEl.dataset.isCyclic = 'false';
             
-            tarefaEl.querySelector('.btn-v').addEventListener('click', function() {
-                const item = this.closest('.tarefa-item');
-                item.classList.add('concluida');
-                item.querySelector('.btn-v').classList.add('active');
-                item.querySelector('.btn-x').classList.remove('active');
-                item.dataset.concluida = 'true';
-                atualizarEficienciaModal(modal);
-                // NOVO: Salvar estado ao clicar
-                salvarEstadoTarefaDia(dataKey, item.dataset.taskId, true);
-            });
-            
-            tarefaEl.querySelector('.btn-x').addEventListener('click', function() {
-                const item = this.closest('.tarefa-item');
-                item.classList.remove('concluida');
-                item.querySelector('.btn-x').classList.add('active');
-                item.querySelector('.btn-v').classList.remove('active');
-                item.dataset.concluida = 'false';
-                atualizarEficienciaModal(modal);
-                // NOVO: Salvar estado ao clicar
-                salvarEstadoTarefaDia(dataKey, item.dataset.taskId, false);
-            });
+            // Event listeners para daily (delegated)
+            tarefaEl.querySelector('.btn-v').addEventListener('click', handleTaskToggle);
+            tarefaEl.querySelector('.btn-x').addEventListener('click', handleTaskToggle);
             
             tarefasContainer.appendChild(tarefaEl);
         });
         
-        // Calcular eficiência inicial basada no estado salvo
-        const eficiencia = Math.round((conclusas / todasMetas.length) * 100);
+        // 2. SEPARADOR VISUAL (opcional)
+        if (metasCiclicas.length > 0) {
+            const separador = document.createElement('div');
+            separador.innerHTML = '<hr style="margin: 1rem 0; opacity: 0.3;">';
+            tarefasContainer.appendChild(separador);
+        }
+        
+        // 3. RENDER CÍCLICAS DEPOIS
+        metasCiclicas.forEach((meta) => {
+            const tarefaEl = document.createElement('div');
+            tarefaEl.className = 'tarefa-item cyclic-task';
+            
+            const cyclicTaskId = meta.cyclicTaskId;
+            const concluidaDia = tarefasCiclicasSalvas[cyclicTaskId] !== undefined 
+                ? tarefasCiclicasSalvas[cyclicTaskId] 
+                : meta.concluida;
+            
+            if (concluidaDia) conclusas++;
+            
+            tarefaEl.innerHTML = `
+                <span class="tarefa-texto">${meta.texto} <small style="opacity: 0.7; color: var(--primary-blue-30)">(${meta.tipo})</small></span>
+                <div class="tarefa-botoes">
+                    <button class="btn-v ${concluidaDia ? 'active' : ''}" data-is-cyclic="true" data-task-id="${cyclicTaskId}">✓</button>
+                    <button class="btn-x ${!concluidaDia ? 'active' : ''}" data-is-cyclic="true" data-task-id="${cyclicTaskId}">✗</button>
+                </div>
+            `;
+            
+            tarefaEl.dataset.concluida = concluidaDia ? 'true' : 'false';
+            tarefaEl.dataset.taskId = cyclicTaskId;
+            tarefaEl.dataset.isCyclic = 'true';
+            
+            // Event listeners para cyclic (delegated)
+            tarefaEl.querySelector('.btn-v').addEventListener('click', handleTaskToggle);
+            tarefaEl.querySelector('.btn-x').addEventListener('click', handleTaskToggle);
+            
+            tarefasContainer.appendChild(tarefaEl);
+        });
+        
+        // ✅ UNIFICAR: Handler global para todos os toggles (já delegados)
+        function handleTaskToggle(e) {
+            const btn = e.target;
+            const tarefaEl = btn.closest('.tarefa-item');
+            const isCheck = btn.classList.contains('btn-v');
+            
+            tarefaEl.classList.toggle('concluida', isCheck);
+            tarefaEl.querySelector('.btn-v').classList.toggle('active', isCheck);
+            tarefaEl.querySelector('.btn-x').classList.toggle('active', !isCheck);
+            tarefaEl.dataset.concluida = isCheck ? 'true' : 'false';
+            
+            atualizarEficienciaModal(modal);
+            
+            // Salvar baseado no tipo
+            const dataKeyLocal = modal.dataset.currentDataKey;
+            const taskIdLocal = tarefaEl.dataset.taskId;
+            const isCyclicLocal = tarefaEl.dataset.isCyclic === 'true';
+            
+            if (isCyclicLocal) {
+                salvarEstadoTarefaCyclicDia(dataKeyLocal, taskIdLocal, isCheck);
+            } else {
+                salvarEstadoTarefaDia(dataKeyLocal, taskIdLocal, isCheck);
+            }
+        }
+        
+        // Calcular eficiência inicial baseada no total (daily + cyclic)
+        const eficiencia = totalTasks > 0 ? Math.round((conclusas / totalTasks) * 100) : 0;
         atualizarDisplayEficiencia(el, eficiencia);
     }
     
@@ -589,25 +705,31 @@ function setupCalendarNavigation() {
 
 // ===== ESTATÍSTICAS =====
 function atualizarEstatisticas() {
+        // Total de metas cadastradas (lista global)
         let totalMetas = 0;
-        let metasConcluidas = 0;
-        let diasAtivos = new Set();
-        
         Object.keys(STORAGE_KEYS).forEach(key => {
             if (key === 'stats') return;
             const metas = JSON.parse(localStorage.getItem(STORAGE_KEYS[key]) || '[]');
             totalMetas += metas.length;
-            metasConcluidas += metas.filter(m => m.concluida).length;
-            
-            metas.forEach(meta => {
-                if (meta.dataCriacao) {
-                    const data = new Date(meta.dataCriacao).toDateString();
-                    diasAtivos.add(data);
-                }
-            });
         });
         
-        const eficiencia = totalMetas ? Math.round((metasConcluidas / totalMetas) * 100) : 0;
+        // Calcular estatísticas a partir do CALENDÁRIO
+        const calendarData = getCalendarData();
+        
+        let diasAtivos = new Set();
+        let somaEficiencias = 0;
+        
+        // Iterar sobre todos os dias no calendario_dias
+        Object.keys(calendarData).forEach(dataKey => {
+            const eficiencia = calendarData[dataKey];
+            if (eficiencia !== undefined) {
+                diasAtivos.add(dataKey);
+                somaEficiencias += eficiencia;
+            }
+        });
+        
+        // Eficiência média a partir do Calendário
+        const eficiencia = diasAtivos.size > 0 ? Math.round(somaEficiencias / diasAtivos.size) : 0;
         
         // Update stats bar fixa
         const statTotal = document.getElementById('stat-total');
@@ -754,7 +876,7 @@ allGoals.forEach((meta, id) => {
             `;
             container.appendChild(chartContainer);
             
-            // Render individual chart com JANELA DESLIZANTE FIXA
+// Render individual chart com JANELA DESLIZANTE FIXA
             setTimeout(() => {
                 const ctx = document.getElementById(`chart-${id.replace(/[^a-zA-Z0-9]/g, '-')}`);
                 if (!ctx) return;
@@ -765,11 +887,31 @@ allGoals.forEach((meta, id) => {
                 
                 const isDark = html.classList.contains('dark-mode');
                 const gridColor = isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)';
-                const textColor = isDark ? '#fff' : '#333';
                 
                 // Arrays fixos de 10 posições sempre
                 const labels = dadosJanela.map(d => d.data);
                 const values = dadosJanela.map(d => d.valor);
+                const explicitamenteNao = dadosJanela.map(d => d.explicitamenteNao);
+                const temRegistro = dadosJanela.map(d => d.temRegistro);
+                
+                // Função RIGOROSA para cor do ponto individualmente
+                // VERDE: Se o valor for 1
+                // VERMELHO: Se o valor for 0 E existe chave no localStorage indicando que o usuário marcou 'Não'
+                // CINZA: Se o valor for 0 E NÃO existe nenhuma entrada/chave no localStorage para esse dia (dia ignorado)
+                const getPointColor = (valor, temReg, explicitNao) => {
+                    if (valor === 1) {
+                        return 'rgb(75, 192, 192)'; // Verde - Tarefa realizada
+                    } else if (temReg === true && explicitNao === true) {
+                        return 'rgb(255, 99, 132)'; // Vermelho - Marcado explicitamente como Não
+                    } else if (temReg === false) {
+                        return 'rgb(189, 189, 189)'; // Cinza - Dia em branco/sem registro
+                    } else {
+                        return 'rgb(255, 99, 132)'; // Vermelho fallback
+                    }
+                };
+                
+                // Preparar array de cores dos pontos
+                const pointColors = values.map((v, i) => getPointColor(v, temRegistro[i], explicitamenteNao[i]));
                 
                 individualCharts[id] = new Chart(ctx, {
                     type: 'line',
@@ -782,12 +924,9 @@ allGoals.forEach((meta, id) => {
                             // Estilo de Degrau com 90°
                             stepped: true,
                             tension: 0,
-                            // Área preenchida Premium: Verde para 1, Vermelho para 0
-                            fill: {
-                                target: { value: 1 },
-                                above: 'rgba(34, 197, 94, 0.25)',
-                                below: 'rgba(239, 68, 68, 0.15)'
-                            },
+                            // fill: true ATIVADO para forçar área verde quando y=1
+                            fill: true,
+                            backgroundColor: 'rgba(75, 192, 192, 0.2)',
                             pointBorderColor: '#fff',
                             pointBorderWidth: 2,
                             pointRadius: 6,
@@ -795,10 +934,10 @@ allGoals.forEach((meta, id) => {
                             spanGaps: true,
                             // Cores dinâmicas por segmento
                             segment: {
-                                borderColor: (ctx) => ctx.p0.parsed.y === 1 ? 'rgb(34, 197, 94)' : 'rgb(239, 68, 68)',
-                                backgroundColor: (ctx) => ctx.p0.parsed.y === 1 ? 'rgba(34, 197, 94, 0.35)' : 'rgba(239, 68, 68, 0.2)'
+                                borderColor: (ctx) => ctx.p0.parsed.y === 1 ? 'rgb(75, 192, 192)' : 'rgb(255, 99, 132)',
+                                backgroundColor: (ctx) => ctx.p0.parsed.y === 1 ? 'rgba(75, 192, 192, 0.25)' : 'rgba(255, 99, 132, 0.1)'
                             },
-                            pointBackgroundColor: values.map(v => v === 1 ? 'rgb(34, 197, 94)' : 'rgb(239, 68, 68)')
+                            pointBackgroundColor: pointColors
                         }]
                     },
                     options: {
@@ -936,6 +1075,7 @@ function getGoalHistory(texto, prioridade, view) {
 /**
  * Gera janela deslizante fixa de 10 dias (Hoje-9 até Hoje)
  * Saída: Array fixo de 10 posições sempre, mesmo sem dados
+ * Cada objeto contém: data, dataKey, valor, temRegistro, explicitamenteNao
  */
 function gerarJanela10Dias(taskId) {
     const hoje = new Date();
@@ -950,25 +1090,29 @@ function gerarJanela10Dias(taskId) {
         // DataKey no formato YYYY-MM-DD
         const dataKey = `${dia.getFullYear()}-${String(dia.getMonth() + 1).padStart(2, '0')}-${String(dia.getDate()).padStart(2, '0')}`;
         
-        // Buscar no localStorage: 1 se concluída, 0 se não registrada ou não concluída
+        // Verificar se há registro no localStorage para esta data
+        let temRegistro = false;
+        let explicitamenteNao = false;
         let valor = 0;
-        if (tarefasCalendar[dataKey]) {
-            const tarefaDia = tarefasCalendar[dataKey][taskId];
-            if (tarefaDia === true || tarefaDia === 1) {
-                valor = 1;
-            }
+        
+        if (tarefasCalendar[dataKey] && tarefasCalendar[dataKey][taskId] !== undefined) {
+            temRegistro = true;
+            explicitamenteNao = tarefasCalendar[dataKey][taskId] === false;
+            valor = tarefasCalendar[dataKey][taskId] === true ? 1 : 0;
         }
         
-        // Formatar data curta: 30/Abr, 01/Mai
+// Formatar data curta: 22 Abr (COM ESPAÇO para legibilidade)
         const dataFormatada = dia.toLocaleDateString('pt-BR', {
             day: '2-digit',
             month: 'short'
-        }).replace('.', '').replace(/ /g, '');
+        }).replace('.', '');
         
         janela.push({
             data: dataFormatada,
             dataKey: dataKey,
-            valor: valor
+            valor: valor,
+            temRegistro: temRegistro,
+            explicitamenteNao: explicitamenteNao
         });
     }
     

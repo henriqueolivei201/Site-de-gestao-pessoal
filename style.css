@@ -846,6 +846,7 @@ body {
     align-items: center;
     justify-content: center;
     transition: all 0.2s ease;
+    
 }
 
 .btn-excluir:hover {
@@ -883,15 +884,26 @@ body {
 .goal-item {
     background: var(--bg-card);
     backdrop-filter: blur(15px);
-    padding: 1.75rem 2.25rem;
+    padding: 1.75rem 1.75rem 1.75rem 2.25rem;
     border-radius: 20px;
     box-shadow: var(--shadow-light);
     display: flex;
     align-items: center;
-    gap: 1.25rem;
+    justify-content: space-between;
+    gap: 1.5rem;
     transition: all 0.3s ease;
     border: 1px solid var(--border-color);
     border-left: 5px solid var(--primary-blue-30);
+    position: relative;
+}
+
+.goal-item .goal-texto, .goal-item .etiqueta-prioridade {
+    flex: 1;
+}
+
+.goal-item .btn-excluir {
+    margin-left: auto;
+    flex-shrink: 0;
 }
 
 .goal-item.exemplo {
