@@ -1,18 +1,20 @@
-# TODO - Fix Gráfico Semanal ✅ CONCLUÍDO
+# Correção de Erros de Sintaxe - script.js
 
-Status: ✅ Completo
+## ✅ PASSOS CONCLUÍDOS
+- [x] 1. Validar sintaxe atual (`node --check script.js`) - Erro linha 595: Duplicate 'tarefasContainer'
 
-## Resumo das Correções:
+- [x] 2. Fechar bloco `navItems.forEach` (adicionar `});`)
+- [x] 3. Corrigir declaração duplicate tarefasContainer
 
-✅ **1.** Added `getTaskStatus()` helper - checks both storages
-✅ **2.** `gerarJanela10Dias(taskId, meta)` & `gerarJanela4Semanas(taskId, meta)` now use cyclic fallback for weekly
-✅ **3.** `renderIndividualCharts()` passes `meta` correctly  
-✅ **4.** Logic verified: weekly checklist data now flows to stats graphs
-✅ **5.** No structural changes - pure data flow fix
+- [ ] 3. Extrair `handleTaskToggle` para escopo global
+- [ ] 4. Corrigir bloco `plugins:` nos gráficos Chart.js
+- [ ] 5. Completar função `isMetaVencida` (calcular `diasPassados`)
+- [ ] 6. Mover `window.onload` para dentro `DOMContentLoaded`
+- [ ] 7. Corrigir outros blocos `if/for/foreach` faltantes
+- [ ] 8. Testar sintaxe final (`node -c script.js`)
+- [ ] 9. Executar app e validar funcionalidades
 
-**Teste:** 
-1. Crie meta semanal
-2. Vá Calendário → marque ✓ na tarefa cíclica
-3. Vá Estatísticas → gráfico individual da meta semanal agora mostra dados!
+## 🔧 PRÓXIMOS PASSOS
+1. **Passo atual:** Ler script.js novamente para localizar exatas strings a editar.
 
-**Problema identificado e corrigido:** Dados iam para `ciclicas_tarefas_dia[cyc_ID]` mas gráficos liam `calendario_tarefas_dia[simple_ID]` → mismatch resolvido.
+**Status:** Iniciando correções...

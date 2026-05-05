@@ -22,7 +22,7 @@ document.addEventListener('DOMContentLoaded', function() {
     
     // Stats
     const totalMetasEl = document.getElementById('total-metas');
-    const eficienciaEl = document.getElementById('metas-concluidas');
+    const eficienciaEl = document.getElementById('metas-concluidas'); 
     const diasAtivosEl = document.getElementById('dias-ativos');
     
     // Dark Mode
@@ -598,21 +598,19 @@ modal.querySelector('#btn-cancelar-dia').addEventListener('click', () => modal.c
             tarefaEl.className = 'tarefa-item';
             
             const taskId = `${meta.texto}-${meta.prioridade}`;
-            const concluidaDia = tarefasDiaSalvo[taskId] !== undefined 
-                ? tarefasDiaSalvo[taskId] 
-                : meta.concluida;
+            const concluidaDia = tarefasDiaSalvo[taskId];
             
-            if (concluidaDia) conclusas++;
+            if (concluidaDia === true) conclusas++;
             
             tarefaEl.innerHTML = `
                 <span class="tarefa-texto">${meta.texto} <small style="opacity: 0.7">(Diária)</small></span>
                 <div class="tarefa-botoes">
-                    <button class="btn-v ${concluidaDia ? 'active' : ''}" data-is-cyclic="false" data-task-id="${taskId}">✓</button>
-                    <button class="btn-x ${!concluidaDia ? 'active' : ''}" data-is-cyclic="false" data-task-id="${taskId}">✗</button>
+                    <button class="btn-v ${concluidaDia === true ? 'active' : ''}" data-is-cyclic="false" data-task-id="${taskId}">✓</button>
+                    <button class="btn-x ${concluidaDia === false ? 'active' : ''}" data-is-cyclic="false" data-task-id="${taskId}">✗</button>
                 </div>
             `;
             
-            tarefaEl.dataset.concluida = concluidaDia ? 'true' : 'false';
+            tarefaEl.dataset.concluida = concluidaDia === true ? 'true' : concluidaDia === false ? 'false' : 'neutral';
             tarefaEl.dataset.taskId = taskId;
             tarefaEl.dataset.isCyclic = 'false';
             
@@ -637,21 +635,19 @@ modal.querySelector('#btn-cancelar-dia').addEventListener('click', () => modal.c
                 tarefaEl.dataset.metaTipo = meta.tipo;
                 
                 const cyclicTaskId = meta.cyclicTaskId;
-                const concluidaDia = tarefasCiclicasSalvas[cyclicTaskId] !== undefined 
-                    ? tarefasCiclicasSalvas[cyclicTaskId] 
-                    : meta.concluida;
+                const concluidaDia = tarefasCiclicasSalvas[cyclicTaskId];
                 
-                if (concluidaDia) conclusas++;
+                if (concluidaDia === true) conclusas++;
                 
                 tarefaEl.innerHTML = `
                     <span class="tarefa-texto">${meta.texto} <small style="opacity: 0.7; color: var(--primary-blue-30)">(${meta.tipo})</small></span>
                     <div class="tarefa-botoes">
-                        <button class="btn-v ${concluidaDia ? 'active' : ''}" data-is-cyclic="true" data-task-id="${cyclicTaskId}">✓</button>
-                        <button class="btn-x ${!concluidaDia ? 'active' : ''}" data-is-cyclic="true" data-task-id="${cyclicTaskId}">✗</button>
+                        <button class="btn-v ${concluidaDia === true ? 'active' : ''}" data-is-cyclic="true" data-task-id="${cyclicTaskId}">✓</button>
+                        <button class="btn-x ${concluidaDia === false ? 'active' : ''}" data-is-cyclic="true" data-task-id="${cyclicTaskId}">✗</button>
                     </div>
                 `;
             
-            tarefaEl.dataset.concluida = concluidaDia ? 'true' : 'false';
+            tarefaEl.dataset.concluida = concluidaDia === true ? 'true' : concluidaDia === false ? 'false' : 'neutral';
             tarefaEl.dataset.taskId = cyclicTaskId;
             tarefaEl.dataset.isCyclic = 'true';
             
@@ -794,7 +790,7 @@ function setupCalendarNavigation() {
         });
     }
 }
-
+window.onload = setupCalendarNavigation;
 // ===== ESTATÍSTICAS =====
 function atualizarEstatisticas() {
         // Total de metas cadastradas (apenas goals: diario, semanal, anual)
@@ -952,29 +948,46 @@ container.innerHTML = '<p class="no-data-message">Nenhuma meta cadastrada ainda.
             return;
         }
         
+
 allGoals.forEach((meta, id) => {
-            const chartContainer = document.createElement('div');
-            chartContainer.className = 'individual-chart-card';
-            
-            // Get history data: pass meta for cyclic lookup
             const taskId = `${meta.texto}-${meta.prioridade}`;
-            const dadosJanela = meta.view === 'semanal' ? gerarJanela4Semanas(taskId, meta) : gerarJanela10Dias(taskId, meta);
+            const flipContainer = document.createElement('div');
+            flipContainer.className = 'flip-card';
+            flipContainer.dataset.taskId = taskId;
             
-            chartContainer.innerHTML = `
-                <h4>${meta.texto}</h4>
-                <p class="meta-info">${meta.prioridade} - ${meta.view.charAt(0).toUpperCase() + meta.view.slice(1)}</p>
-                <canvas id="chart-${id.replace(/[^a-zA-Z0-9]/g, '-')}" width="300" height="150"></canvas>
+            const dadosJanela = meta.view === 'semanal' ? gerarJanela4Semanas(taskId, meta) : gerarJanela10Dias(taskId, meta);
+            const chartId = `chart-${id.replace(/[^a-zA-Z0-9]/g, '-')}`;
+            
+            flipContainer.innerHTML = `
+                <div class="flip-card-inner">
+                    <div class="flip-card-front">
+                        <div class="chart-header">${meta.texto}<br><small>${meta.prioridade} - ${meta.view.charAt(0).toUpperCase() + meta.view.slice(1)}</small></div>
+                        <canvas id="${chartId}" width="300" height="150"></canvas>
+                    </div>
+                    <div class="flip-card-back">
+                        <!-- Stats injected on flip -->
+                    </div>
+                </div>
             `;
-            container.appendChild(chartContainer);
+            container.appendChild(flipContainer);
+
             
 // Render individual chart com JANELA DESLIZANTE FIXA
+
+
+            // Add click handler after canvas ready
+            flipContainer.addEventListener('click', (e) => {
+                flipCardToggle(flipContainer);
+            });
+            
             setTimeout(() => {
-                const ctx = document.getElementById(`chart-${id.replace(/[^a-zA-Z0-9]/g, '-')}`);
+                const ctx = document.getElementById(chartId);
                 if (!ctx) return;
                 
                 if (individualCharts[id]) {
                     individualCharts[id].destroy();
                 }
+
                 
                 const isDark = html.classList.contains('dark-mode');
                 const gridColor = isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)';
@@ -1012,9 +1025,8 @@ individualCharts[id] = new Chart(ctx, {
                             label: 'Concluída',
                             data: values,
                             borderWidth: 3,
-                            stepped: 'middle', // Degrau suave no meio
+                            stepped: 'middle',
                             tension: 0,
-                            // fill: true ATIVADO para forçar área verde quando y=1
                             fill: true,
                             backgroundColor: 'rgba(75, 192, 192, 0.2)',
                             pointBorderColor: '#fff',
@@ -1022,7 +1034,6 @@ individualCharts[id] = new Chart(ctx, {
                             pointRadius: 6,
                             pointHoverRadius: 8,
                             spanGaps: true,
-                            // Cores dinâmicas por segmento
                             segment: {
                                 borderColor: (ctx) => ctx.p0.parsed.y === 1 ? 'rgb(75, 192, 192)' : 'rgb(255, 99, 132)',
                                 backgroundColor: (ctx) => ctx.p0.parsed.y === 1 ? 'rgba(75, 192, 192, 0.25)' : 'rgba(255, 99, 132, 0.1)'
@@ -1033,6 +1044,11 @@ individualCharts[id] = new Chart(ctx, {
                     options: {
                         responsive: true,
                         maintainAspectRatio: false,
+                        layout: {
+                            padding: {
+                                bottom: 20
+                            }
+                        },
                         scales: {
                             y: {
                                 beginAtZero: true,
@@ -1041,14 +1057,19 @@ individualCharts[id] = new Chart(ctx, {
                                     stepSize: 1,
                                     callback: (val) => val === 1 ? 'Sim' : (val === 0 ? 'Não' : '')
                                 },
-                                grid: { color: gridColor }
+                                grid: { 
+                                    color: gridColor 
+                                }
                             },
                             x: {
                                 grid: { display: false },
                                 ticks: {
                                     maxRotation: 45,
                                     minRotation: 45,
-                                    autoSkip: true
+                                    autoSkip: true,
+                                    font: {
+                                        size: 10
+                                    }
                                 }
                             }
                         },
@@ -1162,6 +1183,7 @@ function getGoalHistory(texto, prioridade, view) {
 }
 
 // ===== HELPER: Get task status from BOTH storages =====
+
 /**
  * Checks task status in calendario_tarefas_dia first, then ciclicas_tarefas_dia
  * @param {string} dataKey - YYYY-MM-DD
@@ -1199,6 +1221,109 @@ function getTaskStatus(dataKey, simpleTaskId, isWeekly = false, meta = null) {
     // 3. No record
     return { valor: 0, temRegistro: false, explicitamenteNao: false };
 }
+
+/**
+ * Flip Card Functions for ESTATÍSTICAS
+ */
+function calculateGoalStats(taskId) {
+    console.log(`Calculating stats for taskId: ${taskId}`);
+    
+    const tarefasDia = JSON.parse(localStorage.getItem('calendario_tarefas_dia') || '{}');
+    const history = [];
+    
+    // Collect ALL dates where this taskId has ANY record
+    Object.keys(tarefasDia).forEach(dataKey => {
+        const diaData = tarefasDia[dataKey];
+        if (diaData && diaData[taskId] !== undefined) {
+            history.push({
+                date: dataKey,
+                value: diaData[taskId] === true ? 1 : 0
+            });
+        }
+    });
+    
+    if (history.length === 0) {
+        console.log(`No data for ${taskId}`);
+        return {
+            eficiencia: 0,
+            maxStreak: 0,
+            totalSim: 0,
+            totalRecords: 0,
+            noData: true
+        };
+    }
+    
+    // Sort chronological (oldest first)
+    history.sort((a, b) => new Date(a.date) - new Date(b.date));
+    
+    let trueCount = 0;
+    let totalRecords = history.length;
+    let currentStreak = 0;
+    let maxStreak = 0;
+    
+    // Traverse REVERSE (newest last) for streak
+    for (let i = history.length - 1; i >= 0; i--) {
+        const record = history[i];
+        if (record.value === 1) {
+            currentStreak++;
+            maxStreak = Math.max(maxStreak, currentStreak);
+        } else {
+            // Explicit false resets streak (gaps already filtered out)
+            currentStreak = 0;
+        }
+    }
+    
+    trueCount = history.filter(r => r.value === 1).length;
+    const eficiencia = totalRecords > 0 ? Math.round((trueCount / totalRecords) * 100) : 0;
+    
+    const stats = {
+        eficiencia,
+        maxStreak,
+        totalSim: trueCount,
+        totalRecords,
+        noData: false
+    };
+    
+    console.log(`Stats ${taskId}:`, stats);
+    return stats;
+}
+
+function flipCardToggle(flipCardEl) {
+    flipCardEl.classList.toggle('flipped');
+    const backEl = flipCardEl.querySelector('.flip-card-back');
+    if (!backEl) return;
+    
+    backEl.innerHTML = ''; // Clean slate, no canvas leak
+    
+    const taskId = flipCardEl.dataset.taskId;
+    const stats = calculateGoalStats(taskId);
+    
+    if (stats.noData) {
+        backEl.innerHTML = `
+            <div class="no-data">
+                Sem registros para análise<br>
+                <small>Marque dias no calendário</small>
+            </div>
+        `;
+        return;
+    }
+    
+    backEl.innerHTML = `
+        <div class="stats-item">
+            <span class="stats-label">Eficiência</span>
+            <span class="stats-value">${stats.eficiencia}%</span>
+        </div>
+        <div class="stats-item">
+            <span class="stats-label">Maior Streak</span>
+            <span class="stats-value">${stats.maxStreak} dias</span>
+        </div>
+        <div class="stats-item">
+            <span class="stats-label">Total Sim</span>
+            <span class="stats-value">${stats.totalSim}</span>
+        </div>
+    `;
+}
+
 
 // ===== JANELA DESLIZANTE FIXA DE 10 DIAS (Daily) =====
 /**
