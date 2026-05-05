@@ -356,10 +356,7 @@ function salvarEstadoTarefaCyclicDia(dataKey, cyclicTaskId, concluida, meta = nu
     tarefasCiclicasDia[cyclicTaskId] = concluida;
     saveTarefasCiclicasDoDia(dataKey, tarefasCiclicasDia);
     
-    // Se é anual e concluída, salvar no Hall da Fama
-    if (meta && meta.tipo === 'anual' && concluida) {
-        salvarHallFamaConquista(meta, dataKey);
-    }
+    // REMOVIDO: Hall da Fama agora só no CONFIRMAR do modal
 }
 
 function salvarHallFamaConquista(meta, dataKey) {
@@ -401,13 +398,109 @@ function carregarHallFama() {
     hallFama.forEach(conquista => {
         const card = document.createElement('div');
         card.className = 'hall-fama-card';
+        card.dataset.id = conquista.id;
         card.innerHTML = `
             <div class="trofeu">🏆</div>
-            <h4>${conquista.texto}</h4>
+            <h4 class="conquista-texto">${conquista.texto}</h4>
+            <div class="conquista-prioridade">${conquista.prioridade}</div>
             <div class="data-conquista">${conquista.dataConquista}</div>
+            <div class="card-actions">
+                <button class="btn-editar" data-id="${conquista.id}">✏️ Editar</button>
+                <button class="btn-excluir" data-id="${conquista.id}">🗑️</button>
+            </div>
         `;
         container.appendChild(card);
     });
+
+    // Event listeners para botões
+    container.querySelectorAll('.btn-editar').forEach(btn => {
+        btn.addEventListener('click', editarConquista);
+    });
+    container.querySelectorAll('.btn-excluir').forEach(btn => {
+        btn.addEventListener('click', excluirConquista);
+    });
+}
+
+function excluirConquista(e) {
+    const id = e.target.dataset.id;
+    if (!confirm('Tem certeza que deseja excluir esta conquista do Hall da Fama?')) return;
+
+    let hallFama = JSON.parse(localStorage.getItem(HALL_FAMA_STORAGE) || '[]');
+    hallFama = hallFama.filter(c => c.id !== id);
+    localStorage.setItem(HALL_FAMA_STORAGE, JSON.stringify(hallFama));
+    carregarHallFama();
+}
+
+function editarConquista(e) {
+    const id = e.target.dataset.id;
+    const conquista = JSON.parse(localStorage.getItem(HALL_FAMA_STORAGE) || '[]').find(c => c.id === id);
+    if (!conquista) return;
+
+    // Reutilizar modal existente ou criar
+    let modal = document.getElementById('modal-hall-edit');
+    if (!modal) {
+        modal = document.createElement('div');
+        modal.id = 'modal-hall-edit';
+        modal.className = 'modal-overlay';
+        modal.innerHTML = `
+            <div class="modal">
+                <h3>Editar Conquista</h3>
+                <input type="text" id="edit-texto" placeholder="Texto da conquista" maxlength="100">
+                <select id="edit-prioridade">
+                    <option value="Alta">Alta</option>
+                    <option value="Média">Média</option>
+                    <option value="Baixa">Baixa</option>
+                </select>
+                <input type="date" id="edit-data">
+                <div class="modal-actions">
+                    <button class="btn-cancelar" id="btn-cancelar-edit">Cancelar</button>
+                    <button class="btn-confirmar" id="btn-salvar-edit">Salvar</button>
+                </div>
+            </div>
+        `;
+        document.body.appendChild(modal);
+
+        // Event listeners
+        document.getElementById('btn-cancelar-edit').addEventListener('click', () => modal.classList.remove('active'));
+        document.getElementById('btn-salvar-edit').addEventListener('click', () => salvarEdicao(modal.dataset.editingId));
+        modal.addEventListener('click', (e) => { if (e.target === modal) modal.classList.remove('active'); });
+    }
+
+    // Preencher form
+    document.getElementById('edit-texto').value = conquista.texto;
+    document.getElementById('edit-prioridade').value = conquista.prioridade;
+    const dataParts = conquista.dataKey.split('-');
+    document.getElementById('edit-data').value = `${dataParts[0]}-${dataParts[1]}-${dataParts[2]}`;
+    modal.dataset.editingId = id;
+    modal.classList.add('active');
+}
+
+function salvarEdicao(id) {
+    const texto = document.getElementById('edit-texto').value.trim();
+    const prioridade = document.getElementById('edit-prioridade').value;
+    const dataKey = document.getElementById('edit-data').value;
+
+    if (!texto) return;
+
+    let hallFama = JSON.parse(localStorage.getItem(HALL_FAMA_STORAGE) || '[]');
+    const index = hallFama.findIndex(c => c.id === id);
+    if (index !== -1) {
+        hallFama[index] = {
+            ...hallFama[index],
+            texto,
+            prioridade,
+            dataConquista: new Date(dataKey + 'T00:00:00').toLocaleDateString('pt-BR', { 
+                day: '2-digit', 
+                month: 'long', 
+                year: 'numeric',
+                weekday: 'long'
+            }),
+            dataKey
+        };
+        localStorage.setItem(HALL_FAMA_STORAGE, JSON.stringify(hallFama));
+        document.getElementById('modal-hall-edit').classList.remove('active');
+        carregarHallFama();
+    }
 }
 
 function isAnualConcluidaDia(dataKey, cyclicTaskId) {
@@ -556,6 +649,22 @@ modal.querySelector('#btn-cancelar-dia').addEventListener('click', () => modal.c
                 data[currentDataKey] = eficiencia;
                 saveCalendarData(data);
             }
+            
+            // ✅ FINAL: Processar conquistas anuais pendentes APENAS se final=true no CONFIRMAR
+            if (window.pendingAnnualStates) {
+                Object.entries(window.pendingAnnualStates).forEach(([cyclicTaskId, isFinalCheck]) => {
+                    if (isFinalCheck) {
+                        const todasCiclicas = renderizarMetasCiclicas(currentDataKey);
+                        const meta = todasCiclicas.find(m => m.cyclicTaskId === cyclicTaskId);
+                        if (meta) {
+                            salvarHallFamaConquista(meta, currentDataKey);
+                        }
+                    }
+                });
+                // Limpar states após processar
+                window.pendingAnnualStates = {};
+            }
+            
             modal.classList.remove('active');
             renderCalendar();
             renderEstatisticas(); // Atualiza gráficos automaticamente (inclui individual charts)
@@ -681,28 +790,37 @@ modal.querySelector('#btn-cancelar-dia').addEventListener('click', () => modal.c
             salvarEstadoTarefaDia(dataKeyLocal, taskIdLocal, isCheck);
             
             if (isCyclicLocal) {
-                // ADICIONAL: Salvar também em cyclic se necessário (anual hall)
+                // ADICIONAL: Salvar também em cyclic se necessário (sem hall da fama aqui)
                 const todasCiclicas = renderizarMetasCiclicas(dataKeyLocal);
                 const meta = todasCiclicas.find(m => m.cyclicTaskId === taskIdLocal);
                 if (meta) {
                     salvarEstadoTarefaCyclicDia(dataKeyLocal, taskIdLocal, isCheck, meta);
                 }
                 
-                // Animação anual
-                if (isCheck && metaTipoLocal === 'anual') {
-                    if (window.confetti) {
-                        confetti({
-                            particleCount: 100,
-                            spread: 70,
-                            origin: { y: 0.6 },
-                            colors: ['#fbbf24', '#f59e0b', '#d97706']
-                        });
+                // Coleta anual pendente para confirmar depois (track state)
+                if (metaTipoLocal === 'anual') {
+                    // Sempre track anual tasks, but only trigger on final true
+                    if (typeof window.pendingAnnualStates === 'undefined') {
+                        window.pendingAnnualStates = {};
                     }
-                    const toast = document.createElement('div');
-                    toast.className = 'motivacao-toast';
-                    toast.textContent = '🏆 CONQUISTA ANUAL! Você é lendário! 🔥';
-                    document.body.appendChild(toast);
-                    setTimeout(() => toast.remove(), 3500);
+                    window.pendingAnnualStates[taskIdLocal] = isCheck;
+                    
+                    if (isCheck) {
+                        // Animação e toast apenas quando marcado como feito
+                        if (window.confetti) {
+                            confetti({
+                                particleCount: 100,
+                                spread: 70,
+                                origin: { y: 0.6 },
+                                colors: ['#fbbf24', '#f59e0b', '#d97706']
+                            });
+                        }
+                        const toast = document.createElement('div');
+                        toast.className = 'motivacao-toast';
+                        toast.textContent = '🏆 Conquista anual marcada! Confirme para eternizar! 🔥';
+                        document.body.appendChild(toast);
+                        setTimeout(() => toast.remove(), 3500);
+                    }
                 }
             }
             
@@ -714,6 +832,13 @@ modal.querySelector('#btn-cancelar-dia').addEventListener('click', () => modal.c
         // Calcular eficiência inicial baseada no total (daily + cyclic)
         const eficiencia = totalTasks > 0 ? Math.round((conclusas / totalTasks) * 100) : 0;
         atualizarDisplayEficiencia(el, eficiencia);
+    }
+    
+    // Inicializar pending states para este modal
+    if (typeof window.pendingAnnualStates === 'undefined') {
+        window.pendingAnnualStates = {};
+    } else {
+        window.pendingAnnualStates = {};
     }
     
     el.classList.add('active');
