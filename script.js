@@ -33,6 +33,7 @@ document.addEventListener('DOMContentLoaded', function() {
     const STORAGE_KEYS = {
         diario: 'metas_diario',
         semanal: 'metas_semanal',
+        mensal: 'metas_mensal',
         anual: 'metas_anual',
         stats: 'estatisticas_geral',
         ciclicas: 'ciclicas_tarefas_dia'
@@ -44,25 +45,35 @@ document.addEventListener('DOMContentLoaded', function() {
     const PRAZO_DIAS = {
         diario: 1,
         semanal: 7,
+        mensal: 30,
         anual: 365
     };
 
     // ===== DARK MODE =====
     function initTema() {
-        const temaSalvo = localStorage.getItem(STORAGE_THEME);
-        const prefereDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
-        if (temaSalvo === 'dark' || (!temaSalvo && prefereDark)) {
-            html.classList.add('dark-mode');
-        }
+    const temaSalvo = localStorage.getItem(STORAGE_THEME);
+    const prefereDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+    if (temaSalvo === 'dark' || (!temaSalvo && prefereDark)) {
+        html.classList.add('dark-mode');
+        const btn = document.getElementById('theme-toggle');
+        btn.setAttribute('data-theme', 'dark');
+        btn.setAttribute('aria-pressed', 'true');
     }
+}
+   function toggleTema() {
+    html.classList.toggle('dark-mode');
+    const isDark = html.classList.contains('dark-mode');
+    localStorage.setItem(STORAGE_THEME, isDark ? 'dark' : 'light');
     
-    function toggleTema() {
-        html.classList.toggle('dark-mode');
-        const isDark = html.classList.contains('dark-mode');
-        localStorage.setItem(STORAGE_THEME, isDark ? 'dark' : 'light');
-        if (chartInstance) chartInstance.destroy();
-        renderEstatisticas();
-    }
+    // Atualizar atributos do botão
+    const btn = document.getElementById('theme-toggle');
+    btn.setAttribute('data-theme', isDark ? 'dark' : 'light');
+    btn.setAttribute('aria-pressed', isDark ? 'true' : 'false');
+    
+    if (chartInstance) chartInstance.destroy();
+    renderEstatisticas();
+}
+    
 
     // ===== MODAL =====
     prioridadeBtns.forEach(btn => {
@@ -278,6 +289,16 @@ function salvarEstadoTarefaDia(dataKey, taskId, concluida) {
 }
 
 // ===== NOVAS FUNÇÕES PARA METAS CÍCLICAS =====
+// Verifica se dataKey é dia de ciclo para meta mensal (mesmo dia do mês)
+function isDiaCicloMensal(meta, dataKey) {
+    const dataHoje = new Date(dataKey + 'T00:00:00');
+    const mesHoje = String(dataHoje.getMonth() + 1).padStart(2, '0');
+    const diaHoje = String(dataHoje.getDate()).padStart(2, '0');
+    const dataCicloEsperada = `${dataHoje.getFullYear()}-${mesHoje}-${diaHoje}`;
+    // Meta mensal criada em 15/10 aparece todo dia 15 de cada mês
+    return dataKey.startsWith(dataHoje.getFullYear() + '-' + mesHoje + '-' + diaHoje);
+}
+
 // Verifica se dataKey é dia de ciclo para meta semanal (mesmo dia da semana da criação)
 function isDiaCicloSemanal(meta, dataKey) {
     const dataCriacao = new Date(meta.dataCriacao);
@@ -311,6 +332,18 @@ function getCyclicTaskId(meta) {
  */
 function renderizarMetasCiclicas(dataKey) {
     const metasCiclicas = [];
+
+    // Carregar metas_mensal
+    const metasMensais = JSON.parse(localStorage.getItem(STORAGE_KEYS.mensal) || '[]');
+    metasMensais.forEach(meta => {
+        if (isDiaCicloMensal(meta, dataKey)) {
+            metasCiclicas.push({
+                ...meta,
+                tipo: 'mensal',
+                cyclicTaskId: getCyclicTaskId(meta)
+            });
+        }
+    });
 
     // Carregar metas_semanal
     const metasSemanais = JSON.parse(localStorage.getItem(STORAGE_KEYS.semanal) || '[]');
@@ -920,9 +953,10 @@ window.onload = setupCalendarNavigation;
 function atualizarEstatisticas() {
         // Total de metas cadastradas (apenas goals: diario, semanal, anual)
         let totalMetas = 0;
-        const goalKeys = ['diario', 'semanal', 'anual'];
+        const goalKeys = ['diario', 'semanal', 'mensal', 'anual'];
         goalKeys.forEach(key => {
-            const metas = JSON.parse(localStorage.getItem(STORAGE_KEYS[key]) || '[]');
+            const raw = JSON.parse(localStorage.getItem(STORAGE_KEYS[key]) || '[]');
+            const metas = Array.isArray(raw) ? raw : []; // ← guard adicionado
             totalMetas += metas.length;
         });
         
@@ -982,7 +1016,34 @@ function atualizarEstatisticas() {
     }
 
 function renderEstatisticas() {
+        // Debug: inspecionar o que o localStorage está devolvendo antes de renderizar
+        // (mantido para ajudar no diagnóstico de fluxo de dados/DOM)
+        try {
+            console.group('Debug Estatisticas (renderEstatisticas)');
+            if (typeof STORAGE_KEYS !== 'undefined') {
+                ['diario','semanal','mensal','anual'].forEach(k => {
+                    const key = STORAGE_KEYS[k];
+                    const raw = localStorage.getItem(key);
+                    let parsed = null;
+                    try { parsed = JSON.parse(raw || 'null'); } catch(e) {}
+                    console.log({
+                        storageKey: key,
+                        type: Array.isArray(parsed) ? 'array' : (parsed === null ? 'null' : typeof parsed),
+                        length: Array.isArray(parsed) ? parsed.length : undefined,
+                        sample: Array.isArray(parsed) && parsed.length ? parsed[0] : undefined
+                    });
+                });
+            }
+            console.log({ calendario_dias: localStorage.getItem('calendario_dias') });
+            const calendarData = getCalendarData();
+            console.log('calendario_dias parsed keys:', calendarData ? Object.keys(calendarData).length : 0);
+            console.groupEnd();
+        } catch (e) {
+            console.warn('Falha no debug de estatisticas:', e);
+        }
+
         atualizarEstatisticas();
+
         
         // Gráfico eficiência últimos 30 dias - LÊ EXCLUSIVAMENTE DO CALENDÁRIO
         const ctx = chartCtx.getContext('2d');
@@ -1007,9 +1068,12 @@ function renderEstatisticas() {
             });
         }
         
+        if (!ctx) return;
+
         if (chartInstance) chartInstance.destroy();
         
         chartInstance = new Chart(ctx, {
+
             type: 'line',
             data: {
                 labels: dados30Dias.map(d => d.label),
@@ -1056,9 +1120,9 @@ plugins: {
         
         container.innerHTML = '';
         
-        // Get all unique goals from daily/semanal only (anual → Hall da Fama)
+        // Get all unique goals from daily/semanal/mensal (anual → Hall da Fama)
         const allGoals = new Map();
-        ['diario', 'semanal'].forEach(key => {
+        ['diario', 'semanal', 'mensal'].forEach(key => {
             const metas = JSON.parse(localStorage.getItem(STORAGE_KEYS[key]) || '[]');
             metas.forEach(meta => {
                 const id = `${meta.texto}-${meta.prioridade}`;
@@ -1080,7 +1144,13 @@ allGoals.forEach((meta, id) => {
             flipContainer.className = 'flip-card';
             flipContainer.dataset.taskId = taskId;
             
-            const dadosJanela = meta.view === 'semanal' ? gerarJanela4Semanas(taskId, meta) : gerarJanela10Dias(taskId, meta);
+            let dadosJanela;
+            if (meta.view === 'diario') {
+                dadosJanela = gerarJanela10Dias(taskId, meta);
+            } else {
+                // Semanal e mensal usam ciclo real (4 pontos)
+                dadosJanela = gerarJanelaCicloReal(meta, 4);
+            }
             const chartId = `chart-${id.replace(/[^a-zA-Z0-9]/g, '-')}`;
             
             flipContainer.innerHTML = `
@@ -1484,22 +1554,44 @@ function gerarJanela10Dias(taskId, meta) {
 
 
 /**
- * Gera janela fixa de 4 semanas (Hoje-21, -14, -7, Hoje) - WEEKLY with cyclic fallback
+ * Gera N pontos de ciclo recorrente baseados na dataCriacao da meta
+ * @param {object} meta - meta com dataCriacao
+ * @param {number} numCiclos - 4 para semanal/mensal
+ * @returns Array de 4 datas cíclicas + status
  */
-function gerarJanela4Semanas(taskId, meta) {
+function gerarJanelaCicloReal(meta, numCiclos = 4) {
+    const dataCriacao = new Date(meta.dataCriacao);
+    const taskId = `${meta.texto}-${meta.prioridade}`;
     const hoje = new Date();
     const janela = [];
-    const offsets = [21, 14, 7, 0];
     
-    offsets.forEach(offset => {
-        const dia = new Date(hoje);
-        dia.setDate(dia.getDate() - offset);
-        const dataKey = `${dia.getFullYear()}-${String(dia.getMonth() + 1).padStart(2, '0')}-${String(dia.getDate()).padStart(2, '0')}`;
+    const view = meta.view || '';
+    let intervaloDias = 0;
+    
+    // Determinar intervalo baseado no tipo
+    switch (view) {
+        case 'semanal': intervaloDias = 7; break;
+        case 'mensal': intervaloDias = 30; break; // ~1 mês
+        default: return []; // Só semanal/mensal
+    }
+    
+    // Encontrar último ciclo <= hoje
+    let dataAtual = new Date(hoje);
+    while (dataAtual > dataCriacao) {
+        dataAtual.setDate(dataAtual.getDate() - intervaloDias);
+    }
+    
+    // Gerar numCiclos pontos para trás da data de criação
+    for (let i = numCiclos - 1; i >= 0; i--) {
+        const dataCiclo = new Date(dataCriacao);
+        dataCiclo.setDate(dataCiclo.getDate() - (i * intervaloDias));
+        
+        const dataKey = `${dataCiclo.getFullYear()}-${String(dataCiclo.getMonth() + 1).padStart(2, '0')}-${String(dataCiclo.getDate()).padStart(2, '0')}`;
         
         const status = getTaskStatus(dataKey, taskId, true, meta);
         
-        const dataFormatada = dia.toLocaleDateString('pt-BR', {
-            day: '2-digit',
+        const dataFormatada = dataCiclo.toLocaleDateString('pt-BR', {
+            day: '2-digit', 
             month: 'short'
         }).replace('.', '');
         
@@ -1510,7 +1602,7 @@ function gerarJanela4Semanas(taskId, meta) {
             temRegistro: status.temRegistro,
             explicitamenteNao: status.explicitamenteNao
         });
-    });
+    }
     
     return janela;
 }
@@ -1537,38 +1629,67 @@ function getDataOrigem() {
 
     // ===== AUTO-EXPIRAÇÃO ===== (runs at midnight)
     function setupMidnightCheck() {
-        const ULTIMO_RESET = 'ultimo_reset_dia';
-        const hoje = new Date().toDateString();
-        const ultimoReset = localStorage.getItem(ULTIMO_RESET);
-        
-        if (ultimoReset !== hoje) {
-            // New day - expire unfinished metas
-            Object.keys(STORAGE_KEYS).forEach(key => {
-                if (key === 'stats') return;
-                const metas = JSON.parse(localStorage.getItem(STORAGE_KEYS[key]) || '[]');
-                const prazoDias = getPrazoDias(key);
-                
-                const atualizadas = metas.map(meta => {
-                    const dataCriacao = new Date(meta.dataCriacao);
-                    const diasPassados = Math.floor((new Date() - dataCriacao) / (1000 * 60 * 60 * 24));
-                    
-                    if (diasPassados >= prazoDias && !meta.concluida) {
-                        // Meta não concluída expirou - registra 0% no calendário
-                        const dataKey = new Date().toISOString().split('T')[0].replace(/-/g, '-');
-                        const calendarData = getCalendarData();
-                        calendarData[dataKey] = 0;
-                        saveCalendarData(calendarData);
-                        return { ...meta, vencida: true };
-                    }
-                    return meta;
-                });
-                
-                localStorage.setItem(STORAGE_KEYS[key], JSON.stringify(atualizadas));
-            });
-            
-            localStorage.setItem(ULTIMO_RESET, hoje);
+    const ULTIMO_RESET = 'ultimo_reset_dia';
+    const hoje = new Date().toDateString();
+    const ultimoReset = localStorage.getItem(ULTIMO_RESET);
+
+    // Helpers de segurança (não muda a estrutura geral do código)
+    function safeParseJsonArray(raw, fallback = null) {
+        try {
+            if (raw === null || raw === undefined) return fallback;
+            const parsed = JSON.parse(raw);
+            return Array.isArray(parsed) ? parsed : fallback;
+        } catch (e) {
+            console.warn('[setupMidnightCheck] JSON inválido para array:', e);
+            return fallback;
         }
     }
+
+    if (ultimoReset !== hoje) {
+        Object.keys(STORAGE_KEYS).forEach(key => {
+            if (key === 'stats') return;
+
+            const prazoDias = getPrazoDias(key);
+
+            const storageKey = STORAGE_KEYS[key];
+            const rawValue = localStorage.getItem(storageKey);
+
+            // Preservar sempre se não for array válido
+            const metas = safeParseJsonArray(rawValue, null);
+            if (!metas) {
+                console.info(`[setupMidnightCheck] Preservando (não é array válido): ${storageKey}`);
+                return;
+            }
+            if (metas.length === 0) return;
+
+            // Transformação (NUNCA produz [] porque é map), mas guardamos contra cenários inesperados
+            const atualizadas = metas.map(meta => {
+                const dataCriacao = new Date(meta.dataCriacao);
+                const diasPassados = Math.floor((new Date() - dataCriacao) / (1000 * 60 * 60 * 24));
+
+                if (diasPassados >= prazoDias && !meta.concluida) {
+                    const dataKey = new Date().toISOString().split('T')[0].replace(/-/g, '-');
+                    const calendarData = getCalendarData();
+                    calendarData[dataKey] = 0;
+                    saveCalendarData(calendarData);
+                    return { ...meta, vencida: true };
+                }
+                return meta;
+            });
+
+            // Guarda extra: se por qualquer motivo a transformação vier vazia, não sobrescreve
+            if (Array.isArray(atualizadas) && atualizadas.length === 0 && metas.length > 0) {
+                console.warn(`[setupMidnightCheck] Não sobrescrevendo com []: ${storageKey}`);
+                return;
+            }
+
+            localStorage.setItem(storageKey, JSON.stringify(atualizadas));
+        });
+
+        localStorage.setItem(ULTIMO_RESET, hoje);
+    }
+}
+
 
 // Inicialização
     initTema();
@@ -1578,13 +1699,20 @@ function getDataOrigem() {
     setupMidnightCheck();
     setupCalendarNavigation();
     
-    themeToggle.addEventListener('click', toggleTema);
-    
+    // Garantir dark mode toggle sempre funciona
+document.addEventListener('click', (e) => {
+    if (e.target.id === 'theme-toggle' || e.target.closest('#theme-toggle')) {
+        toggleTema();
+    }
+});
     window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', (e) => {
         const temaSalvo = localStorage.getItem(STORAGE_THEME);
         if (!temaSalvo) {
             html.classList.toggle('dark-mode', e.matches);
-            renderEstatisticas();
+            if (document.getElementById('secao-estatisticas').classList.contains('active')) {
+                renderEstatisticas();
+            }
         }
     });
 });
+

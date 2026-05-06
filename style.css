@@ -64,13 +64,30 @@ body {
     width: 48px;
     height: 48px;
     border-radius: 50%;
-    cursor: pointer;
+    cursor: pointer !important;
     display: flex;
     align-items: center;
     justify-content: center;
     transition: all 0.3s ease;
     box-shadow: var(--shadow-light);
     color: white;
+    pointer-events: auto !important;
+    user-select: none;
+    position: relative;
+    z-index: 10;
+}
+
+.theme-toggle[data-theme="dark"] .icon-sun {
+    opacity: 0.2 !important;
+}
+.theme-toggle[data-theme="dark"] .icon-moon {
+    opacity: 1 !important;
+}
+.theme-toggle[data-theme="light"] .icon-sun {
+    opacity: 1 !important;
+}
+.theme-toggle[data-theme="light"] .icon-moon {
+    opacity: 0.2 !important;
 }
 
 .theme-toggle:hover {
