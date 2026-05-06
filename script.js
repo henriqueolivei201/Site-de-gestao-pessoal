@@ -43,11 +43,13 @@ document.addEventListener('DOMContentLoaded', function() {
 
     // Prazo por tipo
     const PRAZO_DIAS = {
-        diario: 1,
-        semanal: 7,
-        mensal: 30,
-        anual: 365
-    };
+    diario: 1,
+    semanal: 7,
+    mensal: 30,
+    anual: 365
+};
+
+// ← ADICIONAR AQUI
 
     // ===== DARK MODE =====
     function initTema() {
@@ -259,6 +261,47 @@ const HALL_FAMA_STORAGE = 'hall_fama_anual'; // NOVO: Conquistas anuais permanen
 let currentMonth = new Date().getMonth();
 let currentYear = new Date().getFullYear();
 let diaSelecionado = null;
+
+function formatDataKeyYYYYMMDD(dateObj) {
+    const y = dateObj.getFullYear();
+    const m = String(dateObj.getMonth() + 1).padStart(2, '0');
+    const d = String(dateObj.getDate()).padStart(2, '0');
+    return `${y}-${m}-${d}`;
+}
+
+function getCicloAtualBase(metaCiclica, dataKeyAtual) {
+    const intervalDias = metaCiclica.tipo === 'mensal' ? PRAZO_DIAS.mensal
+                       : metaCiclica.tipo === 'anual'  ? PRAZO_DIAS.anual : 0;
+    if (!intervalDias) return null;
+    const base = new Date(metaCiclica.dataCriacao);
+    const hoje = new Date(dataKeyAtual + 'T00:00:00');
+    const diffDays = Math.floor((hoje - base) / (1000 * 60 * 60 * 24));
+    const k = Math.max(0, Math.floor(diffDays / intervalDias));
+    const start = new Date(base);
+    start.setDate(start.getDate() + (k * intervalDias));
+    const prazoFinal = new Date(base);
+    prazoFinal.setDate(prazoFinal.getDate() + ((k + 1) * intervalDias));
+    return { start, prazoFinal };
+}
+
+function isObrigatoriaHoje(metaCiclica, dataKeyAtual) {
+    const ciclo = getCicloAtualBase(metaCiclica, dataKeyAtual);
+    if (!ciclo) return false;
+    return formatDataKeyYYYYMMDD(ciclo.prazoFinal) === dataKeyAtual;
+}
+
+function isConcluidaAntecipadamenteNoCiclo(metaCiclica, dataKeyAtual) {
+    const ciclo = getCicloAtualBase(metaCiclica, dataKeyAtual);
+    if (!ciclo) return false;
+    const prazoKey = formatDataKeyYYYYMMDD(ciclo.prazoFinal);
+    const startKey = formatDataKeyYYYYMMDD(ciclo.start);
+    const tarefasCalendar = JSON.parse(localStorage.getItem(CICLICAS_STORAGE) || '{}');
+    const taskId = metaCiclica.cyclicTaskId;
+    for (const k of Object.keys(tarefasCalendar)) {
+        if (tarefasCalendar[k]?.[taskId] === true && k >= startKey && k < prazoKey) return true;
+    }
+    return false;
+}
 
 function getCalendarData() {
 return JSON.parse(localStorage.getItem(CALENDAR_STORAGE) || '{}');
@@ -672,8 +715,36 @@ modal.querySelector('#btn-cancelar-dia').addEventListener('click', () => modal.c
             let conclusas = 0;
             
             tarefas.forEach(tarefa => {
-                total++;
-                if (tarefa.dataset.concluida === 'true') conclusas++;
+                const metaTipo = tarefa.dataset.metaTipo || '';
+                const taskIdLocalForMeta = tarefa.dataset.taskId;
+
+                // Para diárias e semanais: conta normalmente
+               if (metaTipo === 'diaria' || metaTipo === 'semanal' || metaTipo === '') {
+                    total++;
+                    if (tarefa.dataset.concluida === 'true') conclusas++;
+                    return;
+                }
+
+                // Para mensal/anual: só entra se
+                // - Obrigatória hoje
+                // - Não concluída antecipadamente no ciclo atual
+                if (metaTipo === 'mensal' || metaTipo === 'anual') {
+                    const cyclicTaskIdLocal = taskIdLocalForMeta;
+                    const metasCiclicasNoDia = renderizarMetasCiclicas(currentDataKey);
+                    const metaCiclica = metasCiclicasNoDia.find(m => m.cyclicTaskId === cyclicTaskIdLocal);
+
+                    if (
+                        metaCiclica &&
+                        isObrigatoriaHoje(metaCiclica, currentDataKey) &&
+                        !isConcluidaAntecipadamenteNoCiclo(metaCiclica, currentDataKey)
+                    ) {
+                        total++;
+                        if (tarefa.dataset.concluida === 'true') conclusas++;
+                    }
+                    return;
+                }
+
+                // Caso não tenha metaTipo esperado, não altera
             });
             
             const eficiencia = total > 0 ? Math.round((conclusas / total) * 100) : 0;
@@ -770,6 +841,54 @@ modal.querySelector('#btn-cancelar-dia').addEventListener('click', () => modal.c
             tarefasContainer.appendChild(separador);
         }
         
+            // ===== UI helpers (apenas exibição de selo) =====
+            function getPrazoDiasAtualPorTipo(tipo) {
+                // UI apenas: segue PRAZO_DIAS do código (diário=1, semanal=7, mensal=30, anual=365)
+                switch (tipo) {
+                    case 'mensal':
+                        return getPrazoDias('mensal');
+                    case 'anual':
+                        return getPrazoDias('anual');
+                    default:
+                        return 0;
+                }
+            }
+
+            function getSeloCicloMensalAnual(meta, dataKeyDia, concluidaDia) {
+                // Regras: mostrar selo só se não foi concluída antecipadamente no ciclo atual
+                // - Bônus: data atual é anterior ao prazo final
+                // - Obrigatória hoje: data atual é igual ao dia do prazo final
+                // - Sem selo/oculta se já foi concluída antecipadamente no ciclo atual
+                if (meta.tipo !== 'mensal' && meta.tipo !== 'anual') return '';
+
+                // Se já foi concluída no ciclo atual, não exibir selo
+                if (concluidaDia === true) return '';
+
+                const prazoDias = getPrazoDiasAtualPorTipo(meta.tipo);
+                const dataCriacao = new Date(meta.dataCriacao);
+                const dataDia = new Date(dataKeyDia + 'T00:00:00');
+
+                // Prazo final: data de criação + prazoDias (mesma referência do código: diasPassados >= prazoDias)
+                const dataPrazo = new Date(dataCriacao);
+                dataPrazo.setDate(dataPrazo.getDate() + prazoDias);
+
+                // Normalizar para comparar somente data
+                const dataDiaMidnight = new Date(dataDia);
+                const dataPrazoMidnight = new Date(dataPrazo);
+                dataDiaMidnight.setHours(0, 0, 0, 0);
+                dataPrazoMidnight.setHours(0, 0, 0, 0);
+
+                if (dataDiaMidnight.getTime() < dataPrazoMidnight.getTime()) {
+                    return `<span class="selo-ciclico selo-bonus" title="Bônus">🎯 Bônus</span>`;
+                }
+
+                if (dataDiaMidnight.getTime() === dataPrazoMidnight.getTime()) {
+                    return `<span class="selo-ciclico selo-obrigatoria" title="Obrigatória hoje">⚠️ Obrigatória hoje</span>`;
+                }
+
+                return '';
+            }
+
             // 3. RENDER CÍCLICAS DEPOIS
             metasCiclicas.forEach((meta) => {
                 const tarefaEl = document.createElement('div');
@@ -780,25 +899,27 @@ modal.querySelector('#btn-cancelar-dia').addEventListener('click', () => modal.c
                 const concluidaDia = tarefasCiclicasSalvas[cyclicTaskId];
                 
                 if (concluidaDia === true) conclusas++;
+
+                const seloHtml = getSeloCicloMensalAnual(meta, dataKey, concluidaDia);
                 
                 tarefaEl.innerHTML = `
-                    <span class="tarefa-texto">${meta.texto} <small style="opacity: 0.7; color: var(--primary-blue-30)">(${meta.tipo})</small></span>
+                    <span class="tarefa-texto">${meta.texto} <small style="opacity: 0.7; color: var(--primary-blue-30)">(${meta.tipo})</small>${seloHtml}</span>
                     <div class="tarefa-botoes">
                         <button class="btn-v ${concluidaDia === true ? 'active' : ''}" data-is-cyclic="true" data-task-id="${cyclicTaskId}">✓</button>
                         <button class="btn-x ${concluidaDia === false ? 'active' : ''}" data-is-cyclic="true" data-task-id="${cyclicTaskId}">✗</button>
                     </div>
                 `;
             
-            tarefaEl.dataset.concluida = concluidaDia === true ? 'true' : concluidaDia === false ? 'false' : 'neutral';
-            tarefaEl.dataset.taskId = cyclicTaskId;
-            tarefaEl.dataset.isCyclic = 'true';
+                tarefaEl.dataset.concluida = concluidaDia === true ? 'true' : concluidaDia === false ? 'false' : 'neutral';
+                tarefaEl.dataset.taskId = cyclicTaskId;
+                tarefaEl.dataset.isCyclic = 'true';
             
-            // Event listeners para cyclic (delegated)
-            tarefaEl.querySelector('.btn-v').addEventListener('click', handleTaskToggle);
-            tarefaEl.querySelector('.btn-x').addEventListener('click', handleTaskToggle);
+                // Event listeners para cyclic (delegated)
+                tarefaEl.querySelector('.btn-v').addEventListener('click', handleTaskToggle);
+                tarefaEl.querySelector('.btn-x').addEventListener('click', handleTaskToggle);
             
-            tarefasContainer.appendChild(tarefaEl);
-        });
+                tarefasContainer.appendChild(tarefaEl);
+            });
         
         // ✅ UNIFICAR: Handler global para todos os toggles (já delegados)
         function handleTaskToggle(e) {
@@ -878,20 +999,37 @@ modal.querySelector('#btn-cancelar-dia').addEventListener('click', () => modal.c
 }
 
 function atualizarEficienciaModal(modal) {
-    // Atualiza cálculo quando usuario muda status
     const tarefas = modal.querySelectorAll('.tarefa-item');
+    const dataKey = modal.dataset.currentDataKey;
     let total = 0;
     let conclusas = 0;
-    
+
     tarefas.forEach(t => {
+        const metaTipo = t.dataset.metaTipo || 'diaria';
+
+        if (metaTipo === 'mensal' || metaTipo === 'anual') {
+            const cyclicTaskId = t.dataset.taskId;
+            const todasCiclicas = renderizarMetasCiclicas(dataKey);
+            const metaCiclica = todasCiclicas.find(m => m.cyclicTaskId === cyclicTaskId);
+
+            if (
+                metaCiclica &&
+                isObrigatoriaHoje(metaCiclica, dataKey) &&
+                !isConcluidaAntecipadamenteNoCiclo(metaCiclica, dataKey)
+            ) {
+                total++;
+                if (t.dataset.concluida === 'true') conclusas++;
+            }
+            return;
+        }
+
         total++;
         if (t.dataset.concluida === 'true') conclusas++;
     });
-    
+
     const eficiencia = total > 0 ? Math.round((conclusas / total) * 100) : 0;
     atualizarDisplayEficiencia(modal, eficiencia);
 }
-
 function atualizarDisplayEficiencia(modal, eficiencia) {
     const resultadoEl = modal.querySelector('.efficiency-resultado');
     const hsl = getEficienciaHSL(eficiencia);

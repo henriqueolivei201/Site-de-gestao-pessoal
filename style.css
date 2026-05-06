@@ -125,6 +125,9 @@ body {
     z-index: 1000;
     border-right: 1px solid var(--border-color);
 }
+.sidebar::-webkit-scrollbar {
+    display: none; /* Chrome/Safari */
+}
 
 .sidebar h2 {
     color: var(--text-primary);
@@ -527,6 +530,33 @@ body {
     border: 1px solid rgba(16, 185, 129, 0.4);
 }
 
+/* Selo Ciclo (UI apenas: mensal/anual no modal do calendário) */
+.selo-ciclico {
+    display: inline-block;
+    margin-left: 0.6rem;
+    padding: 0.25rem 0.6rem;
+    border-radius: 999px;
+    font-size: 0.78rem;
+    font-weight: 800;
+    letter-spacing: 0.2px;
+    border: 1px solid transparent;
+    vertical-align: middle;
+    line-height: 1.2;
+}
+
+.selo-obrigatoria {
+    background: rgba(239, 68, 68, 0.15);
+    color: #dc2626;
+    border-color: rgba(239, 68, 68, 0.35);
+}
+
+.selo-bonus {
+    background: rgba(245, 158, 11, 0.15);
+    color: #f59e0b;
+    border-color: rgba(245, 158, 11, 0.35);
+}
+
+
 /* Calendar */
 .calendar-section {
     padding: 1rem 0;
@@ -687,7 +717,11 @@ body {
 
 /* Modal Dia - Tarefas */
 .modal-dia {
-    max-width: 450px;
+    max-width: 450pxs;
+}
+
+.modal-dia::-webkit-scrollbar {
+    display: none; /* Chrome/Safari */
 }
 
 .efficiency-resultado {
