@@ -956,17 +956,16 @@ function atualizarEstatisticas() {
         const goalKeys = ['diario', 'semanal', 'mensal', 'anual'];
         goalKeys.forEach(key => {
             const raw = JSON.parse(localStorage.getItem(STORAGE_KEYS[key]) || '[]');
-            const metas = Array.isArray(raw) ? raw : []; // ← guard adicionado
+            const metas = Array.isArray(raw) ? raw : [];
             totalMetas += metas.length;
         });
-        
+
         // Calcular estatísticas a partir do CALENDÁRIO
         const calendarData = getCalendarData();
-        
+
         let diasAtivos = new Set();
         let somaEficiencias = 0;
-        
-        // Iterar sobre todos os dias no calendario_dias
+
         Object.keys(calendarData).forEach(dataKey => {
             const eficiencia = (calendarData[dataKey] || 0);
             if (eficiencia !== undefined) {
@@ -974,25 +973,67 @@ function atualizarEstatisticas() {
                 somaEficiencias += eficiencia;
             }
         });
-        
-        // Eficiência média a partir do Calendário
+
         const eficiencia = diasAtivos.size > 0 ? Math.round(somaEficiencias / diasAtivos.size) : 0;
-        
+
         // Update stats bar fixa
         const statTotal = document.getElementById('stat-total');
         const statEficiencia = document.getElementById('stat-eficiencia');
         const statDias = document.getElementById('stat-dias');
         const statStreak = document.getElementById('stat-streak');
-        
+
         if (statTotal) statTotal.textContent = totalMetas;
         if (statEficiencia) statEficiencia.textContent = eficiencia + '%';
         if (statDias) statDias.textContent = diasAtivos.size;
         if (statStreak) statStreak.textContent = calcularStreak();
-        
+
         // Update stats section
         totalMetasEl.textContent = totalMetas;
         eficienciaEl.textContent = eficiencia + '%';
         diasAtivosEl.textContent = diasAtivos.size;
+
+        // Dados para o gráfico principal (últimos 30 dias)
+        const agora = new Date();
+        const labels = [];
+        const data = [];
+
+        for (let i = 29; i >= 0; i--) {
+            const dia = new Date(agora);
+            dia.setDate(dia.getDate() - i);
+
+            const dataKey = `${dia.getFullYear()}-${String(dia.getMonth() + 1).padStart(2, '0')}-${String(dia.getDate()).padStart(2, '0')}`;
+            const eficienciaDia = calendarData[dataKey];
+
+            labels.push(
+                dia.toLocaleDateString('pt-BR', { day: 'numeric', month: 'short' })
+            );
+
+            data.push(eficienciaDia !== undefined ? eficienciaDia : null);
+        }
+
+        // Se não tiver nenhum registro real (todos null) => retornar arrays vazios
+        const temRegistroReal = data.some(v => v !== null && v !== undefined);
+        if (!temRegistroReal) {
+            return { labels: [], datasets: [] };
+        }
+
+        return {
+            labels,
+            datasets: [
+                {
+                    label: 'Eficiência (%)',
+                    data,
+                    borderColor: 'rgb(59, 130, 246)',
+                    backgroundColor: 'rgba(59, 130, 246, 0.1)',
+                    tension: 0.4,
+                    fill: true,
+                    pointBackgroundColor: 'rgb(59, 130, 246)',
+                    pointBorderColor: '#fff',
+                    pointBorderWidth: 2,
+                    pointRadius: 6
+                }
+            ]
+        };
     }
     
     function calcularStreak() {
@@ -1016,99 +1057,78 @@ function atualizarEstatisticas() {
     }
 
 function renderEstatisticas() {
-        // Debug: inspecionar o que o localStorage está devolvendo antes de renderizar
-        // (mantido para ajudar no diagnóstico de fluxo de dados/DOM)
         try {
-            console.group('Debug Estatisticas (renderEstatisticas)');
-            if (typeof STORAGE_KEYS !== 'undefined') {
-                ['diario','semanal','mensal','anual'].forEach(k => {
-                    const key = STORAGE_KEYS[k];
-                    const raw = localStorage.getItem(key);
-                    let parsed = null;
-                    try { parsed = JSON.parse(raw || 'null'); } catch(e) {}
-                    console.log({
-                        storageKey: key,
-                        type: Array.isArray(parsed) ? 'array' : (parsed === null ? 'null' : typeof parsed),
-                        length: Array.isArray(parsed) ? parsed.length : undefined,
-                        sample: Array.isArray(parsed) && parsed.length ? parsed[0] : undefined
-                    });
-                });
+            // Identificação do canvas (segura)
+            const ctx = document.getElementById('eficiencia-chart')?.getContext('2d');
+
+            if (!ctx) {
+                console.warn('[renderEstatisticas] Canvas #eficiencia-chart não existe.');
+                return;
             }
-            console.log({ calendario_dias: localStorage.getItem('calendario_dias') });
-            const calendarData = getCalendarData();
-            console.log('calendario_dias parsed keys:', calendarData ? Object.keys(calendarData).length : 0);
-            console.groupEnd();
-        } catch (e) {
-            console.warn('Falha no debug de estatisticas:', e);
-        }
 
-        atualizarEstatisticas();
+            // Gestão de instância: evita sobreposição e bugs de hover
+            if (chartInstance) {
+                chartInstance.destroy();
+                chartInstance = null;
+            }
 
-        
-        // Gráfico eficiência últimos 30 dias - LÊ EXCLUSIVAMENTE DO CALENDÁRIO
-        const ctx = chartCtx.getContext('2d');
-        const calendarData = getCalendarData(); // Lê do Calendário
-        const agora = new Date();
-        const dados30Dias = [];
-        
-        for (let i = 29; i >= 0; i--) {
-            const dia = new Date(agora);
-            dia.setDate(dia.getDate() - i);
-            
-            // Formato: YYYY-MM-DD (mesmo do Calendário)
-            const dataKey = `${dia.getFullYear()}-${String(dia.getMonth() + 1).padStart(2, '0')}-${String(dia.getDate()).padStart(2, '0')}`;
-            const eficiencia = calendarData[dataKey];
-            
-            // Se tem dado salvo (inclusive 0%), usa o valor. Se não tem, usa null para não mostrar
-            const value = eficiencia !== undefined ? eficiencia : null;
-            
-            dados30Dias.push({
-                label: dia.toLocaleDateString('pt-BR', {day: 'numeric', month: 'short'}),
-                value: value
-            });
-        }
-        
-        if (!ctx) return;
+            const dados = atualizarEstatisticas();
 
-        if (chartInstance) chartInstance.destroy();
-        
-        chartInstance = new Chart(ctx, {
+            const temDados = Array.isArray(dados?.labels) && dados.labels.length > 0 &&
+                Array.isArray(dados?.datasets) && dados.datasets.length > 0;
 
-            type: 'line',
-            data: {
-                labels: dados30Dias.map(d => d.label),
-                datasets: [{
-                    label: 'Eficiência (%)',
-                    data: dados30Dias.map(d => d.value),
-                    borderColor: 'rgb(59, 130, 246)',
-                    backgroundColor: 'rgba(59, 130, 246, 0.1)',
-                    tension: 0.4,
-                    fill: true,
-                    pointBackgroundColor: 'rgb(59, 130, 246)',
-                    pointBorderColor: '#fff',
-                    pointBorderWidth: 2,
-                    pointRadius: 6
-                }]
-            },
-            options: {
-                responsive: true,
-                maintainAspectRatio: false,
-                scales: {
-                    y: {
-                        beginAtZero: true,
-                        max: 100,
-                        grid: { color: 'rgba(0,0,0,0.1)' }
-                    },
-                    x: { grid: { display: false } }
-                },
-plugins: {
-                    legend: { display: false }
+            // Tratamento de dados vazios
+            if (!temDados) {
+                const statsSection = document.getElementById('secao-estatisticas');
+                if (statsSection) {
+                    let msg = document.getElementById('estatisticas-sem-dados');
+                    if (!msg) {
+                        msg = document.createElement('p');
+                        msg.id = 'estatisticas-sem-dados';
+                        msg.style.marginTop = '1rem';
+                        msg.style.color = 'var(--text-secondary)';
+                        msg.style.textAlign = 'center';
+                        msg.textContent = 'Sem dados para este período';
+                        statsSection.appendChild(msg);
+                    } else {
+                        msg.textContent = 'Sem dados para este período';
+                    }
                 }
+
+                // Ainda assim, renderiza cards individuais
+                renderIndividualCharts();
+                return;
             }
-        });
-        
-        // Individual goal charts
-        renderIndividualCharts();
+
+            // Se chegou aqui, tem dados: remove mensagem antiga
+            const msgAntiga = document.getElementById('estatisticas-sem-dados');
+            msgAntiga?.remove();
+
+            // new Chart(...) explícito e visível
+            chartInstance = new Chart(ctx, {
+                type: 'line',
+                data: dados,
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: {
+                        y: {
+                            beginAtZero: true,
+                            max: 100,
+                            grid: { color: 'rgba(0,0,0,0.1)' }
+                        },
+                        x: { grid: { display: false } }
+                    },
+                    plugins: {
+                        legend: { display: false }
+                    }
+                }
+            });
+
+            renderIndividualCharts();
+        } catch (error) {
+            console.error('ERRO NA RENDERIZAÇÃO:', error);
+        }
     }
 
     // ===== GRÁFICOS POR META =====
@@ -1133,7 +1153,7 @@ plugins: {
         });
         
         if (allGoals.size === 0) {
-container.innerHTML = '<p class="no-data-message">Nenhuma meta cadastrada ainda.</p>';
+            container.innerHTML = '<p class="no-data-message">Nenhuma meta cadastrada ainda.</p>';
             return;
         }
         
@@ -1421,8 +1441,6 @@ function getTaskStatus(dataKey, simpleTaskId, isWeekly = false, meta = null) {
  * Flip Card Functions for ESTATÍSTICAS
  */
 function calculateGoalStats(taskId) {
-    console.log(`Calculating stats for taskId: ${taskId}`);
-    
     const tarefasDia = JSON.parse(localStorage.getItem('calendario_tarefas_dia') || '{}');
     const history = [];
     
