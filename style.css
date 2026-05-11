@@ -297,6 +297,12 @@ body {
     letter-spacing: 0.5px;
 }
 
+.p1{
+    font-weight: 600;
+    font-size: 1.2rem;
+    color: var(--text-primary)
+}
+
 .prioridade-btn.active,
 .prioridade-btn:hover {
     border-color: var(--primary-blue-30);
@@ -832,10 +838,12 @@ body {
         gap: 1.5rem;
     }
     
-    #eficiencia-chart {
-        height: 250px !important;
-    }
+   .chart-wrapper {
+    position: relative;
+    height: 250px;
 }
+    }
+
 
 
 .btn-cancelar, .btn-confirmar, .btn-limpar {
@@ -1458,5 +1466,48 @@ body {
 @media (max-width: 480px) {
     .main-header { padding: 1.25rem; }
     .goal-item { padding: 1.25rem; }
-    #data-atual { font-size: 1.5rem; }
+#data-atual { font-size: 1.5rem; }
 }
+
+/* Pontuação */
+css.chart-wrapper-pontuacao {
+    position: relative;
+    height: 300px;
+    width: 100%;
+    margin-bottom: 2rem;
+}
+
+#pontuacao-total-display {
+    font-size: 2.5rem;
+    font-weight: bold;
+    text-align: center;
+}
+
+#pontuacao-rank-display {
+    font-size: 1.2rem;
+    text-align: center;
+    margin-bottom: 1rem;
+}
+
+.conquista-pontuacao-card {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    padding: 1rem;
+    border-radius: 8px;
+    margin-bottom: 0.75rem;
+    background: var(--card-bg);
+    opacity: 0.4;
+}
+
+.conquista-pontuacao-card.desbloqueada {
+    opacity: 1;
+    border: 1px solid var(--primary);
+}
+
+.conquista-pontuacao-card .conquista-icon { font-size: 2rem; }
+.conquista-pontuacao-card .conquista-info { flex: 1; }
+.conquista-pontuacao-card .conquista-nome { font-weight: bold; }
+.conquista-pontuacao-card .conquista-desc { font-size: 0.85rem; opacity: 0.7; }
+.conquista-pontuacao-card .conquista-pts { font-weight: bold; font-size: 1.1rem; }
+

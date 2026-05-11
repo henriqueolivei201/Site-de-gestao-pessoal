@@ -36,7 +36,8 @@ document.addEventListener('DOMContentLoaded', function() {
         mensal: 'metas_mensal',
         anual: 'metas_anual',
         stats: 'estatisticas_geral',
-        ciclicas: 'ciclicas_tarefas_dia'
+        ciclicas: 'ciclicas_tarefas_dia',
+        pontuacao: 'historico_pontuacao'
     };
 
     let prioridadeSelecionada = 'Média';
@@ -159,7 +160,7 @@ navItems.forEach(item => {
         if (targetSection) targetSection.classList.add('active');
         
         // Mostrar/esconder botão Nova Meta
-        if (view === 'estatisticas' || view === 'calendario') {
+        if (view === 'estatisticas' || view === 'calendario' || view === 'pontuacao') {
             btnNovaMeta.style.display = 'none';
         } else {
             btnNovaMeta.style.display = 'block';
@@ -171,6 +172,8 @@ navItems.forEach(item => {
                 carregarHallFama();
             } else if (view === 'calendario') {
                 renderCalendar();
+            } else if (view === 'pontuacao') {
+                renderPontuacao();
             } else {
                 carregarMetas(view);
             }
@@ -290,7 +293,7 @@ function isObrigatoriaHoje(metaCiclica, dataKeyAtual) {
     return formatDataKeyYYYYMMDD(ciclo.prazoFinal) === dataKeyAtual;
 }
 
-function isConcluidaAntecipadamenteNoCiclo(metaCiclica, dataKeyAtual) {
+    function isConcluidaAntecipadamenteNoCiclo(metaCiclica, dataKeyAtual) {
     const ciclo = getCicloAtualBase(metaCiclica, dataKeyAtual);
     if (!ciclo) return false;
     const prazoKey = formatDataKeyYYYYMMDD(ciclo.prazoFinal);
@@ -301,6 +304,298 @@ function isConcluidaAntecipadamenteNoCiclo(metaCiclica, dataKeyAtual) {
         if (tarefasCalendar[k]?.[taskId] === true && k >= startKey && k < prazoKey) return true;
     }
     return false;
+}
+
+// ===== PONTUAÇÃO (Histórico + Rank) =====
+// STORAGE_KEYS já existe no código; adicionaremos a chave no objeto.
+
+const RANKS = [
+    { nome: 'Iniciante',    pontos: 0,    icon: '🐱', punicao: 1,   desc: 'Primeira semana de uso.' },
+    { nome: 'Amador',       pontos: 300,  icon: '​🐺​', punicao: 1,   desc: '~3 meses de consistência.' },
+    { nome: 'Esforçado',    pontos: 1000, icon: '🐯', punicao: 1,   desc: '~6-8 meses. O hábito está formado.' },
+    { nome: 'Disciplinado', pontos: 2500, icon: '​🦁', punicao: 1.5, desc: '~1 ano. Você é referência.' },
+    { nome: 'Imparável',    pontos: 4500, icon: '🐻', punicao: 2,   desc: 'A reta final (Rumo aos 2 anos).' },
+    { nome: 'Lendário',     pontos: 6000, icon: '🐉👑', punicao: 3,   desc: 'Consagração Total.' }
+];
+
+const PONTOS_POR_TIPO = { diario: 1, semanal: 7, mensal: 30, anual: 365 };
+
+function getRankAtual(pontuacaoTotal) {
+    let rankAtual = RANKS[0];
+    for (const rank of RANKS) {
+        if (pontuacaoTotal >= rank.pontos) rankAtual = rank;
+    }
+    return rankAtual;
+}
+
+function renderPontuacao() {
+    const pontuacaoTotalDisplay = document.getElementById('pontuacao-total-display');
+    const pontuacaoRankDisplay = document.getElementById('pontuacao-rank-display');
+    const conquistasContainer = document.getElementById('conquistas-container');
+    const canvasEl = document.getElementById('pontuacao-chart');
+
+    if (!pontuacaoTotalDisplay || !pontuacaoRankDisplay || !conquistasContainer || !canvasEl) return;
+
+    // Pontuação total atual
+    const pontuacaoTotal = calcularPontuacaoTotal();
+    const rankAtual = getRankAtual(Math.max(0, pontuacaoTotal));
+
+    // UI base
+    pontuacaoTotalDisplay.textContent = `${pontuacaoTotal} pts`;
+    pontuacaoRankDisplay.innerHTML = `${rankAtual.icon} <strong>${rankAtual.nome}</strong>`;
+
+    // Garantir chart limpo
+    if (chartInstance) {
+        chartInstance.destroy();
+        chartInstance = null;
+    }
+
+    // Atualizar histórico e gráfico
+    const historico = gerarHistoricoPontuacao();
+    // Se não tiver dados, ainda assim mostra um chart vazio
+    const labels = historico.map(h => {
+        const d = new Date(h.dataKey + 'T00:00:00');
+        return d.toLocaleDateString('pt-BR', { day: '2-digit', month: 'short' });
+    });
+    const dataAcumulada = historico.map(h => h.acumulado);
+
+    const ctx = canvasEl.getContext('2d');
+    chartInstance = new Chart(ctx, {
+        type: 'line',
+        data: {
+            labels,
+            datasets: [{
+                label: 'Pontuação Acumulada',
+                data: dataAcumulada,
+                borderColor: 'rgb(59, 130, 246)',
+                backgroundColor: 'rgba(59, 130, 246, 0.1)',
+                tension: 0.4,
+                fill: true,
+                pointBorderColor: '#fff',
+                pointBorderWidth: 2,
+                pointRadius: 6,
+                pointHoverRadius: 8
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            scales: {
+                y: { beginAtZero: true },
+                x: { grid: { display: false } }
+            },
+            plugins: { legend: { display: false } }
+        }
+    });
+
+    // Hall da Fama: desbloqueios por rank (sem mexer em carregarHallFama)
+    // Usa historico_pontuacao (pontuacao total atual) e RANKS.forEach
+    const desbloqueadas = [];
+    RANKS.forEach((r) => {
+        const desbloqueada = pontuacaoTotal >= r.pontos;
+            if (desbloqueada) desbloqueadas.push(r);
+
+        // Se desbloqueou agora pela primeira vez, salva no Hall da Fama
+        if (desbloqueada) {
+            const hallFama = JSON.parse(localStorage.getItem(HALL_FAMA_STORAGE) || '[]');
+            const idConquista = `rank_${r.nome}`;
+            const jaExiste = hallFama.some(c => c.id === idConquista);
+            if (!jaExiste) {
+                hallFama.unshift({
+                    id: idConquista,
+                    texto: `Rank ${r.nome} desbloqueado!`,
+                    prioridade: 'Alta',
+                    dataConquista: new Date().toLocaleDateString('pt-BR', {
+                        day: '2-digit', month: 'long', year: 'numeric', weekday: 'long'
+                    }),
+                    dataKey: new Date().toISOString().split('T')[0]
+                });
+                localStorage.setItem(HALL_FAMA_STORAGE, JSON.stringify(hallFama));
+            }
+        }
+    });
+
+    // Renderizar conquistas na seção de Pontuação (somente UI; Hall da Fama fica na outra aba)
+    conquistasContainer.innerHTML = '';
+    if (desbloqueadas.length === 0) {
+        conquistasContainer.innerHTML = '<p class="no-data-message" style="text-align:center; color: var(--text-secondary);">Nenhum rank desbloqueado ainda.</p>';
+    } else {
+        const list = document.createElement('div');
+        list.className = 'pontuacao-conquistas-list';
+        desbloqueadas.slice().reverse().forEach(r => {
+            const item = document.createElement('div');
+            item.className = 'pontuacao-conquista-item';
+            item.innerHTML = `${r.icon} ${r.nome} (${r.pontos} pts)`;
+            list.appendChild(item);
+        });
+        conquistasContainer.appendChild(list);
+    }
+
+    // também atualiza a seção Estatísticas para refletir (se estiver aberta)
+    // (não altera carregarHallFama)
+    return;
+}
+
+
+function calcularPontuacaoTotal() {
+    const tarefasDia = JSON.parse(localStorage.getItem(CALENDAR_TAREFAS) || '{}');
+
+    // IMPORTANTE (fix): semanal/mensal/anual estão sendo persistidas no mesmo storage de calendar:
+    // calendario_tarefas_dia[dataKey]['cyc_...']
+    // ciclicas_tarefas_dia pode estar vazio/defasado.
+    const tarefasCiclicas = tarefasDia;
+
+    const metasDiarias = JSON.parse(localStorage.getItem(STORAGE_KEYS.diario) || '[]');
+    const metasSemanais = JSON.parse(localStorage.getItem(STORAGE_KEYS.semanal) || '[]');
+    const metasMensais = JSON.parse(localStorage.getItem(STORAGE_KEYS.mensal) || '[]');
+    const metasAnuais = JSON.parse(localStorage.getItem(STORAGE_KEYS.anual) || '[]');
+
+    let total = 0;
+
+    console.log('[DEBUG calcularPontuacaoTotal] tarefasCiclicas (source calendar)', {
+        chaves: Object.keys(tarefasCiclicas).slice(0, 50),
+        totalChaves: Object.keys(tarefasCiclicas).length,
+        exemplos: Object.entries(tarefasCiclicas).slice(0, 3).map(([k, v]) => ({ dataKey: k, valores: v }))
+    });
+
+    // Diárias — taskId simples: "texto-prioridade"
+    Object.values(tarefasDia).forEach(diaObj => {
+        // FIX #3: multiplicador recalculado com total acumulado até agora (não fixo em zero)
+        const mult = getRankAtual(Math.max(0, total)).punicao;
+        metasDiarias.forEach(meta => {
+            const taskId = `${meta.texto}-${meta.prioridade}`;
+            if (diaObj[taskId] === true) total += PONTOS_POR_TIPO.diario;
+            else if (diaObj[taskId] === false) total -= PONTOS_POR_TIPO.diario * mult;
+        });
+    });
+
+    console.log('[DEBUG calcularPontuacaoTotal] total antes das cíclicas', { total });
+
+    // Cíclicas — taskId com getCyclicTaskId(): "cyc_texto-Prioridade_YYYYMMDD"
+    Object.values(tarefasCiclicas).forEach((diaObj, idx) => {
+        // FIX #3: multiplicador recalculado com total acumulado até agora
+        const mult = getRankAtual(Math.max(0, total)).punicao;
+
+        metasSemanais.forEach(meta => {
+            const taskId = getCyclicTaskId(meta);
+            const existe = Object.prototype.hasOwnProperty.call(diaObj, taskId);
+
+            if (idx < 5) {
+                console.log('[DEBUG calcularPontuacaoTotal] semanal', {
+                    idx,
+                    taskId,
+                    existeComoChave: existe,
+                    valor: existe ? diaObj[taskId] : undefined,
+                    multAtual: mult
+                });
+            }
+
+            if (diaObj[taskId] === true) total += PONTOS_POR_TIPO.semanal;
+            else if (diaObj[taskId] === false) total -= PONTOS_POR_TIPO.semanal * mult;
+        });
+
+        // FIX #2: mensais agora usam cyclicTaskId e buscam em ciclicas_tarefas_dia
+        metasMensais.forEach(meta => {
+            const taskId = getCyclicTaskId(meta);
+            const existe = Object.prototype.hasOwnProperty.call(diaObj, taskId);
+
+            console.log('[DEBUG calcularPontuacaoTotal] mensal', {
+                idx,
+                meta: { texto: meta?.texto, prioridade: meta?.prioridade, dataCriacao: meta?.dataCriacao },
+                taskId,
+                existeComoChave: existe,
+                valorNoDiaObj: existe ? diaObj[taskId] : undefined,
+                multAtual: mult,
+                totalAntes: total
+            });
+
+            if (diaObj[taskId] === true) {
+                total += PONTOS_POR_TIPO.mensal;
+                console.log('[DEBUG calcularPontuacaoTotal] mensal +', {
+                    taskId,
+                    totalDepois: total
+                });
+            } else if (diaObj[taskId] === false) {
+                total -= PONTOS_POR_TIPO.mensal * mult;
+                console.log('[DEBUG calcularPontuacaoTotal] mensal -', {
+                    taskId,
+                    totalDepois: total
+                });
+            }
+        });
+
+        metasAnuais.forEach(meta => {
+            const taskId = getCyclicTaskId(meta);
+            const existe = Object.prototype.hasOwnProperty.call(diaObj, taskId);
+
+            if (idx < 5) {
+                console.log('[DEBUG calcularPontuacaoTotal] anual', {
+                    idx,
+                    taskId,
+                    existeComoChave: existe,
+                    valor: existe ? diaObj[taskId] : undefined,
+                    multAtual: mult
+                });
+            }
+
+            if (diaObj[taskId] === true) total += PONTOS_POR_TIPO.anual;
+            else if (diaObj[taskId] === false) total -= PONTOS_POR_TIPO.anual * mult;
+        });
+    });
+
+    console.log('[DEBUG calcularPontuacaoTotal] total final', { total });
+    return Math.round(total);
+}
+
+// --- Fim do calcularPontuacaoTotal() ---
+
+
+
+
+function gerarHistoricoPontuacao() {
+    const tarefasDia = JSON.parse(localStorage.getItem(CALENDAR_TAREFAS) || '{}');
+    const tarefasCiclicas = JSON.parse(localStorage.getItem(CICLICAS_STORAGE) || '{}');
+    const metasDiarias = JSON.parse(localStorage.getItem(STORAGE_KEYS.diario) || '[]');
+    const metasSemanais = JSON.parse(localStorage.getItem(STORAGE_KEYS.semanal) || '[]');
+    const metasMensais = JSON.parse(localStorage.getItem(STORAGE_KEYS.mensal) || '[]');
+    const metasAnuais = JSON.parse(localStorage.getItem(STORAGE_KEYS.anual) || '[]');
+
+    const todasDatas = new Set([
+        ...Object.keys(tarefasDia),
+        ...Object.keys(tarefasCiclicas)
+    ]);
+
+    const historico = [];
+    let acumulado = 0;
+
+    Array.from(todasDatas).sort().forEach(dataKey => {
+        let pontosDia = 0;
+        // FIX #3: multiplicador baseado no acumulado real até este ponto
+        const mult = getRankAtual(Math.max(0, acumulado)).punicao;
+        const diaD = tarefasDia[dataKey] || {};
+        const diaC = tarefasCiclicas[dataKey] || {};
+
+        metasDiarias.forEach(meta => {
+            const id = `${meta.texto}-${meta.prioridade}`;
+            if (diaD[id] === true) pontosDia += PONTOS_POR_TIPO.diario;
+            else if (diaD[id] === false) pontosDia -= PONTOS_POR_TIPO.diario * mult;
+        });
+
+        // FIX #2: usar cyclicTaskId para semanais, mensais e anuais
+        [...metasSemanais, ...metasMensais, ...metasAnuais].forEach(meta => {
+            const tipo = metasSemanais.includes(meta) ? 'semanal'
+                       : metasMensais.includes(meta)  ? 'mensal'
+                       : 'anual';
+            const id = getCyclicTaskId(meta);
+            if (diaC[id] === true) pontosDia += PONTOS_POR_TIPO[tipo];
+            else if (diaC[id] === false) pontosDia -= PONTOS_POR_TIPO[tipo] * mult;
+        });
+
+        acumulado += pontosDia;
+        historico.push({ dataKey, pontosDia, acumulado });
+    });
+
+    return historico;
 }
 
 function getCalendarData() {
@@ -334,12 +629,23 @@ function salvarEstadoTarefaDia(dataKey, taskId, concluida) {
 // ===== NOVAS FUNÇÕES PARA METAS CÍCLICAS =====
 // Verifica se dataKey é dia de ciclo para meta mensal (mesmo dia do mês)
 function isDiaCicloMensal(meta, dataKey) {
+    const dataCriacao = new Date(meta.dataCriacao);
     const dataHoje = new Date(dataKey + 'T00:00:00');
-    const mesHoje = String(dataHoje.getMonth() + 1).padStart(2, '0');
-    const diaHoje = String(dataHoje.getDate()).padStart(2, '0');
-    const dataCicloEsperada = `${dataHoje.getFullYear()}-${mesHoje}-${diaHoje}`;
-    // Meta mensal criada em 15/10 aparece todo dia 15 de cada mês
-    return dataKey.startsWith(dataHoje.getFullYear() + '-' + mesHoje + '-' + diaHoje);
+
+    const diaDoMesCriacao = dataCriacao.getDate();
+    const diaDoMesDataKey = dataHoje.getDate();
+
+    const resultado = diaDoMesCriacao === diaDoMesDataKey;
+
+    console.log('[DEBUG isDiaCicloMensal]', {
+        meta: { texto: meta?.texto, prioridade: meta?.prioridade, tipo: meta?.tipo, dataCriacao: meta?.dataCriacao },
+        dataKey,
+        diaDoMesCriacao,
+        diaDoMesDataKey,
+        resultado
+    });
+
+    return resultado;
 }
 
 // Verifica se dataKey é dia de ciclo para meta semanal (mesmo dia da semana da criação)
@@ -351,14 +657,12 @@ function isDiaCicloSemanal(meta, dataKey) {
 
 // Verifica se dataKey é dia de ciclo para meta anual (mesma data)
 function isDiaCicloAnual(meta, dataKey) {
-    const dataHoje = new Date(dataKey + 'T00:00:00');
-    const anoHoje = dataHoje.getFullYear();
-    const mesHoje = String(dataHoje.getMonth() + 1).padStart(2, '0');
-    const diaHoje = String(dataHoje.getDate()).padStart(2, '0');
-    const dataCicloEsperada = `${anoHoje}-${mesHoje}-${diaHoje}`;
-    // Meta anual criada em 02/05 aparece todo 02/05, independentemente do ano
-    return dataKey.startsWith(`${anoHoje}-${mesHoje}-${diaHoje}`);
+    // A meta anual deve aparecer na lista de tarefas TODOS os dias.
+    // O conceito de "obrigatória hoje" fica para o cálculo da eficiência (via isObrigatoriaHoje).
+    return true;
 }
+
+
 
 // Gera taskId único para metas cíclicas: 'cyc_[texto-prioridade]_[dataCriacao curta]'
 function getCyclicTaskId(meta) {
@@ -378,8 +682,25 @@ function renderizarMetasCiclicas(dataKey) {
 
     // Carregar metas_mensal
     const metasMensais = JSON.parse(localStorage.getItem(STORAGE_KEYS.mensal) || '[]');
+    const metasSemanais = JSON.parse(localStorage.getItem(STORAGE_KEYS.semanal) || '[]');
+    const metasAnuais = JSON.parse(localStorage.getItem(STORAGE_KEYS.anual) || '[]');
+
+    console.log('[DEBUG renderizarMetasCiclicas] carregadas', {
+        dataKey,
+        mensais: metasMensais.length,
+        semanais: metasSemanais.length,
+        anuais: metasAnuais.length
+    });
+
     metasMensais.forEach(meta => {
-        if (isDiaCicloMensal(meta, dataKey)) {
+        const ehDia = isDiaCicloMensal(meta, dataKey);
+        console.log('[DEBUG renderizarMetasCiclicas] mensal', {
+            dataKey,
+            meta: { texto: meta?.texto, prioridade: meta?.prioridade, dataCriacao: meta?.dataCriacao },
+            isDiaCicloMensal: ehDia
+        });
+
+        if (ehDia) {
             metasCiclicas.push({
                 ...meta,
                 tipo: 'mensal',
@@ -389,9 +710,15 @@ function renderizarMetasCiclicas(dataKey) {
     });
 
     // Carregar metas_semanal
-    const metasSemanais = JSON.parse(localStorage.getItem(STORAGE_KEYS.semanal) || '[]');
     metasSemanais.forEach(meta => {
-        if (isDiaCicloSemanal(meta, dataKey)) {
+        const ehDia = isDiaCicloSemanal(meta, dataKey);
+        console.log('[DEBUG renderizarMetasCiclicas] semanal', {
+            dataKey,
+            meta: { texto: meta?.texto, prioridade: meta?.prioridade, dataCriacao: meta?.dataCriacao },
+            isDiaCicloSemanal: ehDia
+        });
+
+        if (ehDia) {
             metasCiclicas.push({
                 ...meta,
                 tipo: 'semanal',
@@ -401,15 +728,38 @@ function renderizarMetasCiclicas(dataKey) {
     });
 
     // Carregar metas_anual
-    const metasAnuais = JSON.parse(localStorage.getItem(STORAGE_KEYS.anual) || '[]');
     metasAnuais.forEach(meta => {
-        if (isDiaCicloAnual(meta, dataKey)) {
+        const ehDia = isDiaCicloAnual(meta, dataKey);
+        console.log('[DEBUG renderizarMetasCiclicas] anual', {
+            dataKey,
+            meta: { texto: meta?.texto, prioridade: meta?.prioridade, dataCriacao: meta?.dataCriacao },
+            isDiaCicloAnual: ehDia
+        });
+
+        if (ehDia) {
             metasCiclicas.push({
                 ...meta,
                 tipo: 'anual',
                 cyclicTaskId: getCyclicTaskId(meta)
             });
         }
+    });
+
+    const tiposCount = metasCiclicas.reduce((acc, m) => {
+        acc[m.tipo] = (acc[m.tipo] || 0) + 1;
+        return acc;
+    }, {});
+
+    console.log('[DEBUG renderizarMetasCiclicas] retorno', {
+        dataKey,
+        totalCiclicas: metasCiclicas.length,
+        tipos: tiposCount,
+        exemplos: metasCiclicas.slice(0, 10).map(m => ({
+            tipo: m.tipo,
+            texto: m.texto,
+            prioridade: m.prioridade,
+            cyclicTaskId: m.cyclicTaskId
+        }))
     });
 
     return metasCiclicas;
@@ -586,6 +936,7 @@ function isAnualConcluidaDia(dataKey, cyclicTaskId) {
 
 function renderCalendar() {
     const grid = document.getElementById('calendar-grid');
+
     const monthYearEl = document.getElementById('calendar-month-year');
     if (!grid || !monthYearEl) return;
 
@@ -1004,6 +1355,15 @@ function atualizarEficienciaModal(modal) {
     let total = 0;
     let conclusas = 0;
 
+    console.log('[DEBUG atualizarEficienciaModal] dataKey', dataKey, 'tarefas', tarefas.length);
+
+    // Para debug/observabilidade: listar quantas anuais existem no modal
+    const anuaisNoModal = Array.from(tarefas).filter(t => (t.dataset.metaTipo || '') === 'anual');
+    console.log('[DEBUG atualizarEficienciaModal] anuaisNoModal', anuaisNoModal.map(t => t.dataset.taskId));
+
+    const metasCiclicasNoDiaCache = renderizarMetasCiclicas(dataKey);
+
+
     tarefas.forEach(t => {
         const metaTipo = t.dataset.metaTipo || 'diaria';
 
@@ -1014,9 +1374,18 @@ function atualizarEficienciaModal(modal) {
 
             if (
                 metaCiclica &&
+                metaCiclica.tipo === 'anual'
+            ) {
+                // Meta anual aparece todos os dias na lista, mas NÃO entra no cálculo de eficiência diária.
+                return;
+            }
+
+            if (
+                metaCiclica &&
                 isObrigatoriaHoje(metaCiclica, dataKey) &&
                 !isConcluidaAntecipadamenteNoCiclo(metaCiclica, dataKey)
             ) {
+
                 total++;
                 if (t.dataset.concluida === 'true') conclusas++;
             }
@@ -1029,7 +1398,7 @@ function atualizarEficienciaModal(modal) {
 
     const eficiencia = total > 0 ? Math.round((conclusas / total) * 100) : 0;
     atualizarDisplayEficiencia(modal, eficiencia);
-}
+}https://zero.click/fc309272-8b2b-42f7-ac40-6547f1e4b4a0
 function atualizarDisplayEficiencia(modal, eficiencia) {
     const resultadoEl = modal.querySelector('.efficiency-resultado');
     const hsl = getEficienciaHSL(eficiencia);
@@ -1086,12 +1455,13 @@ function setupCalendarNavigation() {
         });
     }
 }
-window.onload = setupCalendarNavigation;
+
 // ===== ESTATÍSTICAS =====
 function atualizarEstatisticas() {
-        // Total de metas cadastradas (apenas goals: diario, semanal, anual)
+        // Total de metas cadastradas (apenas goals: diario e semanal)
         let totalMetas = 0;
-        const goalKeys = ['diario', 'semanal', 'mensal', 'anual'];
+        const goalKeys = ['diario', 'semanal'];
+
         goalKeys.forEach(key => {
             const raw = JSON.parse(localStorage.getItem(STORAGE_KEYS[key]) || '[]');
             const metas = Array.isArray(raw) ? raw : [];
@@ -1133,9 +1503,9 @@ function atualizarEstatisticas() {
         // Dados para o gráfico principal (últimos 30 dias)
         const agora = new Date();
         const labels = [];
-        const data = [];
-
-        for (let i = 29; i >= 0; i--) {
+        const data = [];    
+        
+        for (let i = 8; i>= 0; i--) {
             const dia = new Date(agora);
             dia.setDate(dia.getDate() - i);
 
@@ -1196,6 +1566,9 @@ function atualizarEstatisticas() {
 
 function renderEstatisticas() {
         try {
+            // Exibir apenas desempenho de metas diárias e semanais
+            // (mensais não entram nos gráficos/estatísticas)
+
             // Identificação do canvas (segura)
             const ctx = document.getElementById('eficiencia-chart')?.getContext('2d');
 
@@ -1272,15 +1645,15 @@ function renderEstatisticas() {
     // ===== GRÁFICOS POR META =====
     const individualCharts = {};
     
-    function renderIndividualCharts() {
+function renderIndividualCharts() {
         const container = document.getElementById('individual-charts-list');
         if (!container) return;
         
         container.innerHTML = '';
         
-        // Get all unique goals from daily/semanal/mensal (anual → Hall da Fama)
-        const allGoals = new Map();
-        ['diario', 'semanal', 'mensal'].forEach(key => {
+            // Get all unique goals from daily + semanal (mensal removido do monitoramento estatístico)
+            const allGoals = new Map();
+            ['diario', 'semanal'].forEach(key => {
             const metas = JSON.parse(localStorage.getItem(STORAGE_KEYS[key]) || '[]');
             metas.forEach(meta => {
                 const id = `${meta.texto}-${meta.prioridade}`;
@@ -1289,6 +1662,7 @@ function renderEstatisticas() {
                 }
             });
         });
+
         
         if (allGoals.size === 0) {
             container.innerHTML = '<p class="no-data-message">Nenhuma meta cadastrada ainda.</p>';
@@ -1548,7 +1922,53 @@ function getGoalHistory(texto, prioridade, view) {
 function getTaskStatus(dataKey, simpleTaskId, isWeekly = false, meta = null) {
     // 1. Check daily storage first (always)
     const tarefasDia = JSON.parse(localStorage.getItem('calendario_tarefas_dia') || '{}');
+
+    // Para cíclicas (semanal/mensal/anual), o app pode ter salvo no calendário_tarefas_dia
+    // usando o cyclicTaskId (ex: cyc_texto-Prioridade_YYYYMMDD). Então tentamos ambos.
     let status = tarefasDia[dataKey]?.[simpleTaskId];
+
+    if (isWeekly && meta) {
+        const cyclicTaskId = getCyclicTaskId(meta);
+        if (tarefasDia[dataKey] && Object.prototype.hasOwnProperty.call(tarefasDia[dataKey], cyclicTaskId)) {
+            status = tarefasDia[dataKey][cyclicTaskId];
+        }
+    }
+
+
+    // DEBUG: verificar keys existentes
+    // (Evita spam: só loga quando houver meta e o cálculo for semanal/cíclico)
+    try {
+        if (isWeekly && meta) {
+            const cyclicTaskId = getCyclicTaskId(meta);
+            const tarefasCiclicas = JSON.parse(localStorage.getItem('ciclicas_tarefas_dia') || '{}');
+            const hasSimple = tarefasDia?.[dataKey]?.hasOwnProperty?.(simpleTaskId);
+            const hasCyclic = tarefasCiclicas?.[dataKey]?.hasOwnProperty?.(cyclicTaskId);
+            if (hasSimple || hasCyclic) {
+                console.warn('[DEBUG getTaskStatus]', {
+                    dataKey,
+                    simpleTaskId,
+                    cyclicTaskId,
+                    hasSimple,
+                    hasCyclic,
+                    statusSimple: tarefasDia?.[dataKey]?.[simpleTaskId],
+                    statusCyclic: tarefasCiclicas?.[dataKey]?.[cyclicTaskId]
+                });
+            } else {
+                // DEBUG: log quando NÃO acha nada, para confirmar se a função está sendo chamada
+                console.warn('[DEBUG getTaskStatus - no records]', {
+                    dataKey,
+                    simpleTaskId,
+                    cyclicTaskId,
+                    hasSimple,
+                    hasCyclic
+                });
+            }
+
+        }
+    } catch (e) {
+        console.error('[DEBUG getTaskStatus] error', e);
+    }
+
     if (status !== undefined) {
         return {
             valor: status === true ? 1 : 0,
@@ -1559,6 +1979,7 @@ function getTaskStatus(dataKey, simpleTaskId, isWeekly = false, meta = null) {
 
     if (isWeekly && meta) {
         // 2. Fallback: reconstruct cyclic ID and check cyclic storage
+        //    IMPORTANTE: as metas semanal/mensal/anual são salvas em ciclicas_tarefas_dia
         const cyclicTaskId = getCyclicTaskId(meta);
         const tarefasCiclicas = JSON.parse(localStorage.getItem('ciclicas_tarefas_dia') || '{}');
         status = tarefasCiclicas[dataKey]?.[cyclicTaskId];
@@ -1574,6 +1995,7 @@ function getTaskStatus(dataKey, simpleTaskId, isWeekly = false, meta = null) {
     // 3. No record
     return { valor: 0, temRegistro: false, explicitamenteNao: false };
 }
+
 
 /**
  * Flip Card Functions for ESTATÍSTICAS
@@ -1717,40 +2139,56 @@ function gerarJanela10Dias(taskId, meta) {
  */
 function gerarJanelaCicloReal(meta, numCiclos = 4) {
     const dataCriacao = new Date(meta.dataCriacao);
-    const taskId = `${meta.texto}-${meta.prioridade}`;
     const hoje = new Date();
     const janela = [];
-    
-    const view = meta.view || '';
+
+    // Determinar intervalo baseado no tipo real (meta.tipo é mensal/semanal; meta.view pode não existir)
+    const tipo = meta.tipo || meta.view || '';
     let intervaloDias = 0;
-    
-    // Determinar intervalo baseado no tipo
-    switch (view) {
-        case 'semanal': intervaloDias = 7; break;
-        case 'mensal': intervaloDias = 30; break; // ~1 mês
-        default: return []; // Só semanal/mensal
+
+    // Robustez: garantir prioridade quando meta.prioridade vier vazia
+    let prioridade = meta.prioridade;
+    if (!prioridade) {
+        try {
+            const metasSemanais = JSON.parse(localStorage.getItem(STORAGE_KEYS.semanal) || '[]');
+            const metasMensais = JSON.parse(localStorage.getItem(STORAGE_KEYS.mensal) || '[]');
+            // Procura por texto; (no app texto costuma ser único dentro do view)
+            const achada = metasSemanais.find(m => m.texto === meta.texto) || metasMensais.find(m => m.texto === meta.texto);
+            if (achada?.prioridade) prioridade = achada.prioridade;
+        } catch (e) {
+            // ignore
+        }
     }
-    
-    // Encontrar último ciclo <= hoje
-    let dataAtual = new Date(hoje);
-    while (dataAtual > dataCriacao) {
-        dataAtual.setDate(dataAtual.getDate() - intervaloDias);
+
+    const taskId = `${meta.texto}-${prioridade}`;
+
+
+    switch (tipo) {
+        case 'semanal':
+            intervaloDias = 7;
+            break;
+        case 'mensal':
+            intervaloDias = 30;
+            break;
+        default:
+            return [];
     }
-    
-    // Gerar numCiclos pontos para trás da data de criação
+
+    // Gerar pontos do passado baseado na dataCriacao (como já era)
     for (let i = numCiclos - 1; i >= 0; i--) {
         const dataCiclo = new Date(dataCriacao);
         dataCiclo.setDate(dataCiclo.getDate() - (i * intervaloDias));
-        
+
         const dataKey = `${dataCiclo.getFullYear()}-${String(dataCiclo.getMonth() + 1).padStart(2, '0')}-${String(dataCiclo.getDate()).padStart(2, '0')}`;
-        
+
+        // Força isWeekly=true para cair no fallback e buscar em ciclicas_tarefas_dia
         const status = getTaskStatus(dataKey, taskId, true, meta);
-        
+
         const dataFormatada = dataCiclo.toLocaleDateString('pt-BR', {
-            day: '2-digit', 
+            day: '2-digit',
             month: 'short'
         }).replace('.', '');
-        
+
         janela.push({
             data: dataFormatada,
             dataKey: dataKey,
@@ -1759,7 +2197,7 @@ function gerarJanelaCicloReal(meta, numCiclos = 4) {
             explicitamenteNao: status.explicitamenteNao
         });
     }
-    
+
     return janela;
 }
 

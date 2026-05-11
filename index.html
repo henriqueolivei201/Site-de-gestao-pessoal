@@ -38,6 +38,7 @@
                 <h3>Nova Meta</h3>
                 <input type="text" id="meta-input" placeholder="Digite sua meta..." maxlength="100">
                 <div class="prioridade-buttons">
+                    <div class="p1">   Prioridade:   </div>
                     <button class="prioridade-btn alta active" data-prioridade="Alta">Alta</button>
                     <button class="prioridade-btn media" data-prioridade="Média">Média</button>
                     <button class="prioridade-btn baixa" data-prioridade="Baixa">Baixa</button>
@@ -61,13 +62,16 @@
                 </div>
             </div>
             <ul>
-                <li class="nav-item active" data-view="diario">📅 Diário</li>
+                <li class="nav-item active" data-view="diario">☀️ Diário</li>
                 <li class="nav-item" data-view="semanal">📊 Semanal</li>
                 <li class="nav-item" data-view="mensal">🗓️ Mensal</li>
+
                 <li class="nav-item" data-view="anual">📈 Anual</li>
                 <li class="nav-item" data-view="estatisticas">📉 Estatísticas</li>
                 <li class="nav-item" data-view="hall-fama">🏆 Hall da Fama</li>
                 <li class="nav-item" data-view="calendario">📅 Calendário</li>
+                <li class="nav-item" data-view="pontuacao">🎖️ Pontuação</li>
+
             </ul>
         </nav>
 
@@ -128,7 +132,9 @@
                         <h3 id="dias-ativos">0</h3>
                         <p>Dias Ativos</p>
                     </div>
-                    <canvas id="eficiencia-chart" width="400" height="200"></canvas>
+                    <div class="chart-wrapper">
+                         <canvas id="eficiencia-chart"></canvas>
+                    </div>
                 </div>
                 <!-- Individual Goal Charts -->
                 <div class="individual-charts-container">
@@ -139,6 +145,7 @@
             
             <!-- Calendário -->
             <section class="goals-section calendar-section" id="secao-calendario">
+
                 <h2>Calendário de Compromissos</h2>
                 <p class="calendar-subtitle">Clique em um dia para registrar sua eficiência</p>
                 <div class="calendar-navigation">
@@ -150,6 +157,18 @@
                     <span>Dom</span><span>Seg</span><span>Ter</span><span>Qua</span><span>Qui</span><span>Sex</span><span>Sáb</span>
                 </div>
                 <div class="calendar-grid" id="calendar-grid"></div>
+            </section>
+
+            <section id="secao-pontuacao" class="goals-section">
+
+                <div class="pontuacao-header">
+                    <div id="pontuacao-total-display"></div>
+                    <div id="pontuacao-rank-display"></div>
+                </div>
+                <div class="chart-wrapper-pontuacao">
+                    <canvas id="pontuacao-chart"></canvas>
+                </div>
+                <div id="conquistas-container"></div>
             </section>
 
             <!-- Hall da Fama -->
