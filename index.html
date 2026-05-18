@@ -30,6 +30,8 @@
             <span class="stat-value" id="stat-streak">0</span>
             <span class="stat-label">Streak</span>
         </div>
+        <button id="btn-logout" class="btn-logout" style="display:none !important;">Sair</button>
+
     </div>
 
     <div class="app-container">
@@ -79,10 +81,11 @@
 
         <!-- Conteúdo Principal -->
 
-        <main class="main-content">
+        <main class="main-content" id="site-main">
             <!-- Cabeçalho Principal -->
             <header class="main-header">
                 <div class="header-left">
+
                     <h1 id="data-atual">Hoje</h1>
                 </div>
                 <div class="header-right">
@@ -184,6 +187,26 @@
         </main>
     </div>
 
+    <!-- Tela de Login (Supabase Auth) -->
+    <div id="login-screen" class="login-screen">
+        <div class="login-card">
+            <h2>Entrar</h2>
+
+            <div id="auth-error" class="auth-error" style="display:none;"></div>
+
+            <input id="login-email" type="email" placeholder="Email" autocomplete="email" />
+            <input id="login-password" type="password" placeholder="Senha" autocomplete="current-password" />
+
+            <div class="login-actions">
+                <button id="btn-login" class="btn-confirmar">Entrar</button>
+                <button id="btn-signup" class="btn-cancelar">Cadastrar</button>
+            </div>
+
+            <div class="login-divider">ou</div>
+
+            <button id="btn-login-google" class="btn-google">Entrar com Google</button>
+        </div>
+    </div>
 
     <script src="script.js"></script>
 </body>

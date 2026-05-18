@@ -1,12 +1,23 @@
 // Gestão Pessoal - script.js
+// Dark mode: respeita preferência do usuário (não aplica dark por padrão)
 if (!window.supabaseClient) {
+
   const SUPABASE_URL = 'https://yxavkjumdojxhlyxslgl.supabase.co';
   const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inl4YXZranVtZG9qeGhseXhzbGdsIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzg2MTY3ODYsImV4cCI6MjA5NDE5Mjc4Nn0.7Dydnonx88tEIpRDodvZ37yTB61XjJmB_O_1njWJi5Y'; 
   
   window.supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 }
+document.addEventListener('DOMContentLoaded', async function() {
+    // Theme init (garante que CSS aplica antes de qualquer render):
+    try {
+        const temaSalvo = localStorage.getItem('tema-preferido');
+        if (temaSalvo === 'dark') {
+            document.documentElement.classList.add('dark-mode');
+        }
+    } catch (e) {}
 
-document.addEventListener('DOMContentLoaded', function() {
+
+
     // Chart.js
     const chartCtx = document.getElementById('eficiencia-chart');
     let chartInstance = null;
@@ -32,9 +43,10 @@ document.addEventListener('DOMContentLoaded', function() {
     
     // Dark Mode
     const html = document.documentElement;
-    const STORAGE_THEME = 'tema-preferido';
-    
+
     // Storage
+    const STORAGE_THEME = 'tema-preferido';
+
     const STORAGE_KEYS = {
         diario: 'metas_diario',
         semanal: 'metas_semanal',
@@ -61,23 +73,29 @@ document.addEventListener('DOMContentLoaded', function() {
     function initTema() {
     const temaSalvo = localStorage.getItem(STORAGE_THEME);
     const prefereDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+
     if (temaSalvo === 'dark' || (!temaSalvo && prefereDark)) {
         html.classList.add('dark-mode');
         const btn = document.getElementById('theme-toggle');
         btn.setAttribute('data-theme', 'dark');
         btn.setAttribute('aria-pressed', 'true');
+    
     }
 }
    function toggleTema() {
+    const before = html.classList.contains('dark-mode');
+    
+
     html.classList.toggle('dark-mode');
     const isDark = html.classList.contains('dark-mode');
+
     localStorage.setItem(STORAGE_THEME, isDark ? 'dark' : 'light');
     
     // Atualizar atributos do botão
     const btn = document.getElementById('theme-toggle');
     btn.setAttribute('data-theme', isDark ? 'dark' : 'light');
     btn.setAttribute('aria-pressed', isDark ? 'true' : 'false');
-    
+
     if (chartInstance) chartInstance.destroy();
     renderEstatisticas();
 }
@@ -105,8 +123,6 @@ document.addEventListener('DOMContentLoaded', function() {
     }
 
     function confirmarMeta() {
-        console.log('[UI] Função confirmarMeta chamada');
-
         const texto = metaInput.value.trim();
         if (!texto) {
             metaInput.style.borderColor = 'var(--danger)';
@@ -118,63 +134,12 @@ document.addEventListener('DOMContentLoaded', function() {
         const listaContainer = secaoAtiva.querySelector('.goals-container');
         const view = secaoAtiva.id.replace('secao-', '');
 
-        // Normaliza usando as etiquetas já suportadas pelo CSS: 'alta' | 'média' | 'baixa'
-        const prioridadeRaw = (prioridadeSelecionada || 'Média').toString().trim();
-        const prioridadeParaUI = prioridadeRaw.toLowerCase();
-
-        // Se veio "Média"/"media"/"MEDIa" etc, manter exatamente "Média"
-        const prioridadeNorm = prioridadeParaUI === 'media' ? 'Média' : (prioridadeRaw === 'Alta' || prioridadeRaw === 'Média' || prioridadeRaw === 'Baixa' ? prioridadeRaw : 'Média');
-
-        const novaMeta = criarElementoMeta(texto, prioridadeNorm, view);
+        const novaMeta = criarElementoMeta(texto, prioridadeSelecionada, view);
         listaContainer.insertBefore(novaMeta, listaContainer.firstChild);
-
-        const tipoMap = {
-            diario: 'diaria',
-            semanal: 'semanal',
-            mensal: 'mensal',
-            anual: 'anual'
-        };
-        const tipo = tipoMap[view];
-
-        console.log('[UI] view:', view, 'tipo:', tipo, 'texto:', texto, 'prioridadeSelecionada:', prioridadeSelecionada);
-        console.log('[Supabase] Cliente:', window.supabaseClient);
-
-        // Atualiza no Supabase (fonte principal)
-        if (tipo && window.supabaseClient) {
-            const dataISO = new Date().toISOString().slice(0, 10);
-
-            console.log('[Supabase] Prioridade selecionada (vai pro insert):', prioridadeSelecionada);
-            console.log('[Supabase] insert payload:', { titulo: texto, tipo, data: dataISO, concluida: false, prioridade: prioridadeSelecionada });
-
-            try {
-        window.supabaseClient
-                    .from('tarefas')
-                    .insert({ titulo: texto, tipo, data: dataISO, concluida: false, prioridade: prioridadeNorm })
-                    .then(({ data, error, status }) => {
-                        if (error) {
-                            console.error('[Supabase] criar tarefa erro:', { error, status });
-                            return;
-                        }
-                        console.log('[Supabase] criar tarefa ok:', { data, status });
-                        carregarMetas(view);
-                        atualizarEstatisticas();
-                    })
-                    .catch((err) => {
-                        console.error('[Supabase] criar tarefa insert catch:', err);
-                    })
-            } catch (err) {
-                console.error('[Supabase] criar tarefa try/catch erro:', err);
-            }
-        } else {
-            console.warn('[Supabase] Não foi possível inserir (tipo ou client ausente). Fallback localStorage.');
-            // Fallback (se Supabase não estiver disponível)
-            salvarMeta(view, texto, prioridadeSelecionada);
-            atualizarEstatisticas();
-        }
-
+        salvarMeta(view, texto, prioridadeSelecionada);
+        atualizarEstatisticas();
         fecharModal();
     }
-
 
     // Event listeners
     btnNovaMeta.addEventListener('click', abrirModal);
@@ -218,7 +183,7 @@ navItems.forEach(item => {
         if (targetSection) targetSection.classList.add('active');
         
         // Mostrar/esconder botão Nova Meta
-        if (view === 'estatisticas' || view === 'calendario' || view === 'pontuacao' || view === 'hall-fama') {
+        if (view === 'estatisticas' || view === 'calendario' || view === 'pontuacao') {
             btnNovaMeta.style.display = 'none';
         } else {
             btnNovaMeta.style.display = 'block';
@@ -256,56 +221,22 @@ navItems.forEach(item => {
 function criarElementoMeta(texto, prioridade, view) {
         const article = document.createElement('article');
         article.className = 'goal-item';
-
-        // Normaliza valores vindos do Supabase/localStorage:
-        // Aceita: "Alta" | "Média" | "Baixa" e também "alta" | "media" (sem acento)
-        const p = (prioridade ?? '').toString().trim().toLowerCase();
-        const cores = {
-            'baixa': 'baixa',
-            'media': 'média',  // CSS usa acento
-            'alta': 'alta'
-        };
-
-        const prioridadeKey = p === 'alta' ? 'alta'
-            : (p === 'média' || p === 'media') ? 'media'
-            : (p === 'baixa') ? 'baixa'
-            : 'media';
-
-        const classePrioridade = `etiqueta-prioridade ${cores[prioridadeKey]}`;
-
         article.innerHTML = `
             <span class="goal-texto">${texto}</span>
-            <span class="${classePrioridade}" data-prioridade="${prioridade}">${p === 'alta' ? 'Alta' : (prioridadeKey === 'baixa' ? 'Baixa' : 'Média')}</span>
+            <span class="etiqueta-prioridade ${prioridade.toLowerCase()}">${prioridade}</span>
             <button class="btn-excluir" aria-label="Excluir meta">&times;</button>
         `;
-
+        
         const deleteBtn = article.querySelector('.btn-excluir');
-
+        
         deleteBtn.addEventListener('click', () => {
-            // Se existir taskId (uuid) no elemento, remove no Supabase.
-            const taskUuid = article.dataset.taskId;
-            if (taskUuid && window.supabaseClient) {
-                window.supabaseClient
-                    .from('tarefas')
-                    .delete()
-                    .eq('id', taskUuid)
-                    .then(() => {
-                        // Recarrega lista do tipo para refletir o estado real.
-                        carregarMetas(view);
-                        atualizarEstatisticas();
-                    })
-                    .catch(err => console.error('[Supabase] delete tarefa erro:', err));
-            } else {
-                // Fallback: remove do localStorage (se Supabase não estiver disponível)
-                removerMeta(view, texto);
-                article.remove();
-                atualizarEstatisticas();
-            }
+            removerMeta(view, texto);
+            article.remove();
+            atualizarEstatisticas();
         });
-
+        
         return article;
     }
-
 
     function salvarMeta(view, texto, prioridade) {
         let metas = JSON.parse(localStorage.getItem(STORAGE_KEYS[view]) || '[]');
@@ -340,57 +271,13 @@ function carregarMetas(view) {
         if (!container) return;
 
         container.innerHTML = '';
-
-        const tipoMap = {
-            diario: 'diaria',
-            semanal: 'semanal',
-            mensal: 'mensal',
-            anual: 'anual'
-        };
-
-        const tipo = tipoMap[view];
-        if (!tipo || !window.supabaseClient) {
-            // Fallback (se Supabase não estiver disponível)
-            const metas = JSON.parse(localStorage.getItem(STORAGE_KEYS[view]) || '[]');
-            metas.forEach(meta => {
-                const elemento = criarElementoMeta(meta.texto, meta.prioridade, view);
-                container.appendChild(elemento);
-            });
-            return;
-        }
-
-        window.supabaseClient
-            .from('tarefas')
-            .select('id,titulo,concluida,data,tipo,prioridade')
-
-            .eq('tipo', tipo)
-            .order('data', { ascending: false })
-            .then(({ data: tarefas, error }) => {
-                if (error) {
-                    console.error('[Supabase] carregarMetas erro:', error);
-                    return;
-                }
-
-                if (!tarefas) return;
-
-                tarefas.forEach(t => {
-                    // Se existir coluna/valor de prioridade no Supabase, usa; senão cai para 'Média'.
-                    const prioridade = t.prioridade || 'Média';
-                    const elemento = criarElementoMeta(t.titulo, prioridade, view);
-
-                    // Também anexamos o id para futuras atualizações.
-                    elemento.dataset.taskId = t.id;
-
-                    if (t.concluida === true) {
-                        elemento.classList.add('concluida');
-                    }
-                    container.appendChild(elemento);
-                });
-
-            })
-            .catch(err => console.error('[Supabase] carregarMetas catch:', err));
+        const metas = JSON.parse(localStorage.getItem(STORAGE_KEYS[view]) || '[]');
+        
+        metas.forEach(meta => {
+            const elemento = criarElementoMeta(meta.texto, meta.prioridade, view);
+            container.appendChild(elemento);
+        });
     }
-
 
 // ===== CALENDÁRIO =====
 const CALENDAR_STORAGE = 'calendario_dias';
@@ -588,12 +475,6 @@ function calcularPontuacaoTotal() {
 
     let total = 0;
 
-    console.log('[DEBUG calcularPontuacaoTotal] tarefasCiclicas (source calendar)', {
-        chaves: Object.keys(tarefasCiclicas).slice(0, 50),
-        totalChaves: Object.keys(tarefasCiclicas).length,
-        exemplos: Object.entries(tarefasCiclicas).slice(0, 3).map(([k, v]) => ({ dataKey: k, valores: v }))
-    });
-
     // Diárias — taskId simples: "texto-prioridade"
     Object.values(tarefasDia).forEach(diaObj => {
         // FIX #3: multiplicador recalculado com total acumulado até agora (não fixo em zero)
@@ -605,7 +486,6 @@ function calcularPontuacaoTotal() {
         });
     });
 
-    console.log('[DEBUG calcularPontuacaoTotal] total antes das cíclicas', { total });
 
     // Cíclicas — taskId com getCyclicTaskId(): "cyc_texto-Prioridade_YYYYMMDD"
     Object.values(tarefasCiclicas).forEach((diaObj, idx) => {
@@ -1135,8 +1015,6 @@ function abrirModalEficiencia(dataKey, dia) {
     const calendarData = getCalendarData();
     const currentEff = calendarData[dataKey];
 
-    console.log('Buscando tarefas para a data:', dataKey);
-
     // Modal existente reutilizar
     let modal = document.getElementById('modal-eficiencia');
     if (!modal) {
@@ -1151,7 +1029,7 @@ function abrirModalEficiencia(dataKey, dia) {
                     <span class="eficiencia-valor">0%</span>
                 </div>
                 <div class="tarefas-lista"></div>
-                <div class="modal-actions">
+<div class="modal-actions">
                     <button class="btn-limpar" id="btn-limpar-dia">Limpar</button>
                     <button class="btn-cancelar" id="btn-cancelar-dia">Cancelar</button>
                     <button class="btn-confirmar" id="btn-confirmar-dia">Confirmar</button>
@@ -1160,339 +1038,332 @@ function abrirModalEficiencia(dataKey, dia) {
         `;
         document.body.appendChild(modal);
 
-        modal.querySelector('#btn-cancelar-dia').addEventListener('click', () => modal.classList.remove('active'));
+modal.querySelector('#btn-cancelar-dia').addEventListener('click', () => modal.classList.remove('active'));
         modal.addEventListener('click', (e) => e.target === modal && modal.classList.remove('active'));
-
-        // Limpar - remove somente eficiência do dia e marcação local (mantém UI/DB como fonte principal)
+        
+// Limpar - remove a eficiência do dia E as tarefas individuais
         modal.querySelector('#btn-limpar-dia').addEventListener('click', () => {
             const currentDataKey = modal.dataset.currentDataKey;
-
-            // Remove eficiência do dia em calendario_dias
+            
+            // 1. Remove eficiência do dia em calendario_dias
             const data = getCalendarData();
+// CORREÇÃO: Verificar explicitamente !== undefined para lidar com eficiência 0%
             if (currentDataKey && data[currentDataKey] !== undefined) {
                 delete data[currentDataKey];
                 saveCalendarData(data);
             }
-
-            // Mantém compatibilidade com gráficos atuais (localStorage)
+            
+// 2. Remove daily tasks deste dia
             const tarefasDia = JSON.parse(localStorage.getItem(CALENDAR_TAREFAS) || '{}');
             if (tarefasDia[currentDataKey]) {
                 delete tarefasDia[currentDataKey];
                 localStorage.setItem(CALENDAR_TAREFAS, JSON.stringify(tarefasDia));
             }
-
+            
+            // 3. Remove cyclic tasks deste dia
+            const tarefasCiclicas = JSON.parse(localStorage.getItem(CICLICAS_STORAGE) || '{}');
+            if (tarefasCiclicas[currentDataKey]) {
+                delete tarefasCiclicas[currentDataKey];
+                localStorage.setItem(CICLICAS_STORAGE, JSON.stringify(tarefasCiclicas));
+            }
+            
+            // 3. Atualiza os gráficos após a limpeza
             modal.classList.remove('active');
             renderCalendar();
-            renderEstatisticas();
+            renderEstatisticas(); // Atualiza gráficos automaticamente (inclui individual charts)
         });
-
-        // Confirmar - calcula eficiência com base nos itens visíveis do modal
+        
+// Confirmar - salva o status das tarefas E atualiza os gráficos
         modal.querySelector('#btn-confirmar-dia').addEventListener('click', () => {
             const currentDataKey = modal.dataset.currentDataKey;
             const tarefasContainer = modal.querySelector('.tarefas-lista');
             const tarefas = tarefasContainer.querySelectorAll('.tarefa-item');
-
             let total = 0;
             let conclusas = 0;
-
+            
             tarefas.forEach(tarefa => {
-                total++;
-                if (tarefa.dataset.concluida === 'true') conclusas++;
-            });
+                const metaTipo = tarefa.dataset.metaTipo || '';
+                const taskIdLocalForMeta = tarefa.dataset.taskId;
 
+                // Para diárias e semanais: conta normalmente
+               if (metaTipo === 'diaria' || metaTipo === 'semanal' || metaTipo === '') {
+                    total++;
+                    if (tarefa.dataset.concluida === 'true') conclusas++;
+                    return;
+                }
+
+                // Para mensal/anual: só entra se
+                // - Obrigatória hoje
+                // - Não concluída antecipadamente no ciclo atual
+                if (metaTipo === 'mensal' || metaTipo === 'anual') {
+                    const cyclicTaskIdLocal = taskIdLocalForMeta;
+                    const metasCiclicasNoDia = renderizarMetasCiclicas(currentDataKey);
+                    const metaCiclica = metasCiclicasNoDia.find(m => m.cyclicTaskId === cyclicTaskIdLocal);
+
+                    if (
+                        metaCiclica &&
+                        isObrigatoriaHoje(metaCiclica, currentDataKey) &&
+                        !isConcluidaAntecipadamenteNoCiclo(metaCiclica, currentDataKey)
+                    ) {
+                        total++;
+                        if (tarefa.dataset.concluida === 'true') conclusas++;
+                    }
+                    return;
+                }
+
+                // Caso não tenha metaTipo esperado, não altera
+            });
+            
             const eficiencia = total > 0 ? Math.round((conclusas / total) * 100) : 0;
             const data = getCalendarData();
             if (currentDataKey) {
                 data[currentDataKey] = eficiencia;
                 saveCalendarData(data);
             }
-
-            // Efetiva conquistas pendentes para tarefas anuais marcadas como concluídas
-            if (typeof window.pendingAnnualStates !== 'undefined' && window.pendingAnnualStates) {
-                tarefas.forEach(tarefa => {
-                    if (tarefa.dataset.metaTipo === 'anual') {
-                        const uuid = tarefa.dataset.taskId;
-                        const pending = window.pendingAnnualStates[uuid];
-                        if (pending === true) {
-                            try {
-                                const meta = {
-                                    texto: tarefa.dataset.metaTitulo,
-                                    prioridade: tarefa.dataset.metaPrioridade,
-                                    tipo: 'anual',
-                                    dataCriacao: new Date().toISOString()
-                                };
-                                salvarHallFamaConquista(meta, currentDataKey);
-                            } catch (err) {
-                                console.error('[Hall da Fama] falhou ao efetivar conquista anual no CONFIRMAR:', err);
-                            }
+            
+            // ✅ FINAL: Processar conquistas anuais pendentes APENAS se final=true no CONFIRMAR
+            if (window.pendingAnnualStates) {
+                Object.entries(window.pendingAnnualStates).forEach(([cyclicTaskId, isFinalCheck]) => {
+                    if (isFinalCheck) {
+                        const todasCiclicas = renderizarMetasCiclicas(currentDataKey);
+                        const meta = todasCiclicas.find(m => m.cyclicTaskId === cyclicTaskId);
+                        if (meta) {
+                            salvarHallFamaConquista(meta, currentDataKey);
                         }
                     }
                 });
-
-                // Limpa pendências após efetivar
+                // Limpar states após processar
                 window.pendingAnnualStates = {};
             }
-
+            
             modal.classList.remove('active');
             renderCalendar();
-            renderEstatisticas();
+            renderEstatisticas(); // Atualiza gráficos automaticamente (inclui individual charts)
         });
     }
 
-    // Armazenar o dataKey atual no modal
-    modal.dataset.currentDataKey = dataKey;
+// Buscar tarefas DIÁRIAS do localStorage (todas, não filtrar por data)
+    // O usuário pode customizar qualquer dia, mesmo que tenha esquecido de acessar
+    const todasMetas = JSON.parse(localStorage.getItem(STORAGE_KEYS['diario']) || '[]');
+    
+    // NOVO: Buscar metas cíclicas elegíveis para HOJE
+    const metasCiclicas = renderizarMetasCiclicas(dataKey);
+    
+    // NOVO: Buscar estados cíclicos salvos para este dia
+    const tarefasCiclicasSalvas = getTarefasCiclicasDoDia(dataKey);
 
+// Armazenar o dataKey atual no modal
+    modal.dataset.currentDataKey = dataKey;
+    
     const el = modal;
     el.querySelector('.efficiency-date').textContent = `${dia} de ${new Date(currentYear, currentMonth).toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' })}`;
-
+    
+    // NOVO: Buscar estado salvo das tarefas deste dia específico
+    const tarefasDiaSalvo = getTarefasDoDia(dataKey);
+    
+    // Renderizar lista de tarefas
     const tarefasContainer = el.querySelector('.tarefas-lista');
     tarefasContainer.innerHTML = '';
-
-    // Handler único para ✓/✗ (precisa do modal scope)
-    function handleTaskToggle(e) {
-        const btn = e.target;
-        const tarefaEl = btn.closest('.tarefa-item');
-        const isCheck = btn.classList.contains('btn-v');
-
-        tarefaEl.classList.toggle('concluida', isCheck);
-        tarefaEl.querySelector('.btn-v').classList.toggle('active', isCheck);
-        tarefaEl.querySelector('.btn-x').classList.toggle('active', !isCheck);
-        tarefaEl.dataset.concluida = isCheck ? 'true' : 'false';
-
-        atualizarEficienciaModal(modal);
-
-        // Atualiza compatibilidade dos gráficos (usa id local do dataset.dataGraphKey)
-        const dataKeyLocal = modal.dataset.currentDataKey;
-        const dataGraphKey = tarefaEl.dataset.dataGraphKey;
-        if (dataGraphKey) {
-            salvarEstadoTarefaDia(dataKeyLocal, dataGraphKey, isCheck);
+    
+    const totalTasks = todasMetas.length + metasCiclicas.length;
+    if (totalTasks === 0) {
+        tarefasContainer.innerHTML = '<p class="sem-tarefas">Nenhuma tarefa para este dia.</p>';
+        el.querySelector('.efficiency-resultado').innerHTML = '<span class="eficiencia-valor">--%</span>';
+    } else {
+        let conclusas = 0;
+        
+        // 1. RENDER DAILY TASKS PRIMEIRO (preservar ordem)
+        todasMetas.forEach((meta) => {
+            const tarefaEl = document.createElement('div');
+            tarefaEl.className = 'tarefa-item';
+            
+            const taskId = `${meta.texto}-${meta.prioridade}`;
+            const concluidaDia = tarefasDiaSalvo[taskId];
+            
+            if (concluidaDia === true) conclusas++;
+            
+            tarefaEl.innerHTML = `
+                <span class="tarefa-texto">${meta.texto} <small style="opacity: 0.7">(Diária)</small></span>
+                <div class="tarefa-botoes">
+                    <button class="btn-v ${concluidaDia === true ? 'active' : ''}" data-is-cyclic="false" data-task-id="${taskId}">✓</button>
+                    <button class="btn-x ${concluidaDia === false ? 'active' : ''}" data-is-cyclic="false" data-task-id="${taskId}">✗</button>
+                </div>
+            `;
+            
+            tarefaEl.dataset.concluida = concluidaDia === true ? 'true' : concluidaDia === false ? 'false' : 'neutral';
+            tarefaEl.dataset.taskId = taskId;
+            tarefaEl.dataset.isCyclic = 'false';
+            
+            // Event listeners para daily (delegated)
+            tarefaEl.querySelector('.btn-v').addEventListener('click', handleTaskToggle);
+            tarefaEl.querySelector('.btn-x').addEventListener('click', handleTaskToggle);
+            
+            tarefasContainer.appendChild(tarefaEl);
+        });
+        
+        // 2. SEPARADOR VISUAL (opcional)
+        if (metasCiclicas.length > 0) {
+            const separador = document.createElement('div');
+            separador.innerHTML = '<hr style="margin: 1rem 0; opacity: 0.3;">';
+            tarefasContainer.appendChild(separador);
         }
-
-        // Hall da Fama anual: apenas registrar "pending" e efetivar no CONFIRMAR do modal.
-        if (tarefaEl.dataset.metaTipo === 'anual') {
-            if (typeof window.pendingAnnualStates === 'undefined') {
-                window.pendingAnnualStates = {};
-            }
-
-            // taskId aqui é o uuid do registro em Supabase.
-            window.pendingAnnualStates[tarefaEl.dataset.taskId] = isCheck;
-        }
-
-
-
-        // Atualiza Supabase pela chave primária (uuid)
-        const taskUuid = tarefaEl.dataset.taskId;
-        if (taskUuid && window.supabaseClient) {
-            window.supabaseClient
-                .from('tarefas')
-                .update({ concluida: isCheck })
-                .eq('id', taskUuid)
-                .then(() => {
-                    if (typeof currentView !== 'undefined' && currentView) {
-                        carregarMetas(currentView);
-                    }
-                    atualizarEstatisticas();
-                })
-                .catch(err => console.error('[Supabase] update concluida erro:', err));
-        }
-
-        // Confetti + toast motivacional
-        if (isCheck === true && typeof window.confetti === 'function') {
-            if (typeof window.confetti === 'function') {
-                window.confetti({
-                    particleCount: 120,
-                    spread: 70,
-                    origin: { y: 0.7 }
-                });
-            }
-
-            // Toast textual: deve aparecer APENAS ao clicar em meta anual.
-            if ((tarefaEl.dataset.metaTipo || '').toLowerCase() === 'anual') {
-                const toast = document.createElement('div');
-                toast.className = 'motivacao-toast';
-                toast.textContent = '🔥 CONFIRME E ENTRE PARA A HISTÓRIA!';
-                document.body.appendChild(toast);
-                setTimeout(() => toast.remove(), 3500);
-            }
-        }
-
-
-        if (chartInstance) chartInstance.destroy();
-        renderIndividualCharts();
-    }
-
-    // Carrega tarefas no Supabase (fonte principal)
-    const tipoParaData = null; // (não usado)
-
-    const insertDefaultIfNoSupabase = async () => {
-        // fallback local caso não exista Supabase
-        const metas = JSON.parse(localStorage.getItem(STORAGE_KEYS.diario) || '[]');
-        tarefasContainer.innerHTML = metas.length ? '' : '<p class="sem-tarefas">Nenhuma tarefa para este dia.</p>';
-    };
-
-    (async () => {
-        try {
-            if (!window.supabaseClient) {
-                console.warn('Supabase client ausente, usando fallback local.');
-                await insertDefaultIfNoSupabase();
-                return;
-            }
-
-            // CORREÇÃO: ao clicar em QUALQUER dia, precisamos listar TODAS as tarefas cadastradas.
-            // O estado (true/false/null) é resolvido pelo localStorage (calendario_tarefas_dia / ciclicas_tarefas_dia),
-            // já que o Supabase não guarda o status por dia no seu modelo atual.
-            const { data, error } = await window.supabaseClient
-                .from('tarefas')
-                .select('id,titulo,concluida,data,tipo,prioridade')
-                .order('data', { ascending: false });
-
-
-            if (error) {
-                console.error('[Supabase] tarefas por dia erro:', error);
-            }
-
-            console.log('Tarefas encontradas:', data);
-
-            if (!data || data.length === 0) {
-                tarefasContainer.innerHTML = '<p class="sem-tarefas">Nenhuma tarefa para este dia.</p>';
-                el.querySelector('.efficiency-resultado').innerHTML = '<span class="eficiencia-valor">--%</span>';
-                el.classList.add('active');
-                return;
-            }
-
-            // Render: agrupar por tipo e aplicar regras de aparição
-            const metasDiariasEl = document.createElement('div');
-            metasDiariasEl.className = 'metas-section';
-            metasDiariasEl.dataset.tipo = 'diaria';
-            metasDiariasEl.innerHTML = '<h4>Metas Diárias</h4>'; 
-
-            const metasSemanaisEl = document.createElement('div');
-            metasSemanaisEl.className = 'metas-section';
-            metasSemanaisEl.dataset.tipo = 'semanal';
-            metasSemanaisEl.innerHTML = '<h4>Metas Semanais</h4>';
-
-            const metasMensaisEl = document.createElement('div');
-            metasMensaisEl.className = 'metas-section';
-            metasMensaisEl.dataset.tipo = 'mensal';
-            metasMensaisEl.innerHTML = '<h4>Metas Mensais</h4>';
-
-            const metasAnuaisEl = document.createElement('div');
-            metasAnuaisEl.className = 'metas-section';
-            metasAnuaisEl.dataset.tipo = 'anual';
-            metasAnuaisEl.innerHTML = '<h4>Metas Anuais</h4>';
-
-            const appendIfHas = (sectionEl) => {
-                if (sectionEl.querySelectorAll('.tarefa-item').length > 0) {
-                    tarefasContainer.appendChild(sectionEl);
+        
+            // ===== UI helpers (apenas exibição de selo) =====
+            function getPrazoDiasAtualPorTipo(tipo) {
+                // UI apenas: segue PRAZO_DIAS do código (diário=1, semanal=7, mensal=30, anual=365)
+                switch (tipo) {
+                    case 'mensal':
+                        return getPrazoDias('mensal');
+                    case 'anual':
+                        return getPrazoDias('anual');
+                    default:
+                        return 0;
                 }
-            };
+            }
 
-            // dataKey para status no localStorage
-            const dataKeyModal = dataKey;
+            function getSeloCicloMensalAnual(meta, dataKeyDia, concluidaDia) {
+                // Regras: mostrar selo só se não foi concluída antecipadamente no ciclo atual
+                // - Bônus: data atual é anterior ao prazo final
+                // - Obrigatória hoje: data atual é igual ao dia do prazo final
+                // - Sem selo/oculta se já foi concluída antecipadamente no ciclo atual
+                if (meta.tipo !== 'mensal' && meta.tipo !== 'anual') return '';
 
-            const dataSelecionada = new Date(dataKeyModal + 'T00:00:00');
+                // Se já foi concluída no ciclo atual, não exibir selo
+                if (concluidaDia === true) return '';
 
+                const prazoDias = getPrazoDiasAtualPorTipo(meta.tipo);
+                const dataCriacao = new Date(meta.dataCriacao);
+                const dataDia = new Date(dataKeyDia + 'T00:00:00');
 
-            // Funções de filtro por frequência
-            const deveAparecer = (t) => {
-                const tipo = t.tipo || 'diaria';
-                const criadaEm = t.data ? new Date(String(t.data) + 'T00:00:00') : null;
+                // Prazo final: data de criação + prazoDias (mesma referência do código: diasPassados >= prazoDias)
+                const dataPrazo = new Date(dataCriacao);
+                dataPrazo.setDate(dataPrazo.getDate() + prazoDias);
 
-                if (tipo === 'diaria') return true;
-                if (!criadaEm) return true; // fallback
+                // Normalizar para comparar somente data
+                const dataDiaMidnight = new Date(dataDia);
+                const dataPrazoMidnight = new Date(dataPrazo);
+                dataDiaMidnight.setHours(0, 0, 0, 0);
+                dataPrazoMidnight.setHours(0, 0, 0, 0);
 
-                if (tipo === 'semanal') return criadaEm.getDay() === dataSelecionada.getDay();
-                if (tipo === 'mensal') return criadaEm.getDate() === dataSelecionada.getDate();
-                if (tipo === 'anual') return true;
+                if (dataDiaMidnight.getTime() < dataPrazoMidnight.getTime()) {
+                    return `<span class="selo-ciclico selo-bonus" title="Bônus">🎯 Bônus</span>`;
+                }
 
-                return true;
-            };
+                if (dataDiaMidnight.getTime() === dataPrazoMidnight.getTime()) {
+                    return `<span class="selo-ciclico selo-obrigatoria" title="Obrigatória hoje">⚠️ Obrigatória hoje</span>`;
+                }
 
-            const adicionarTarefaNoGrupo = (t, grupoEl) => {
+                return '';
+            }
+
+            // 3. RENDER CÍCLICAS DEPOIS
+            metasCiclicas.forEach((meta) => {
                 const tarefaEl = document.createElement('div');
-                tarefaEl.className = 'tarefa-item';
+                tarefaEl.className = 'tarefa-item cyclic-task';
+                tarefaEl.dataset.metaTipo = meta.tipo;
+                
+                const cyclicTaskId = meta.cyclicTaskId;
+                const concluidaDia = tarefasCiclicasSalvas[cyclicTaskId];
+                
+                if (concluidaDia === true) conclusas++;
 
-                // dataGraphKey usado pelos gráficos atuais (texto-prioridade)
-                const prioridadeGraficos = t.prioridade ? String(t.prioridade) : 'Média';
-                const dataGraphKey = `${t.titulo}-${prioridadeGraficos}`;
-
-                // Estado por dia: para diário usamos calendário_tarefas_dia,
-                // para semanal/mensal/anual o seu código já usa renderizarMetasCiclicas + cyclicTaskId.
-                // Aqui, marcamos inicial com base no dataset para o ✓/✗ do modal.
-                let concluidaDia = null;
-
-                // Diário: status no localStorage por taskId simples
-                const taskIdSimples = `${t.titulo}-${(t.prioridade || 'Média')}`;
-                const tarefasDia = JSON.parse(localStorage.getItem(CALENDAR_TAREFAS) || '{}');
-                const statusNoDia = tarefasDia?.[dataKey]?.[taskIdSimples];
-
-                if (t.tipo === 'diaria') {
-                    concluidaDia = statusNoDia;
-                }
-
-                // Para cíclicas, a estrutura do seu app usa taskId/cyclicTaskId no localStorage.
-                // A melhor aproximação sem refatorar: manter concluídaDia como null e deixar
-                // `atualizarEficienciaModal()` calcular a eficiência ignorando anuais obrigatórias.
-                // O ✓/✗ continuará funcionando ao clicar pois `handleTaskToggle` grava em `calendario_tarefas_dia`.
-
-                tarefaEl.dataset.taskId = t.id; // uuid
-                tarefaEl.dataset.dataGraphKey = dataGraphKey;
-
-                // dataset.concluida precisa ser string para o seu código
-                tarefaEl.dataset.concluida = concluidaDia === true ? 'true' : (concluidaDia === false ? 'false' : 'false');
-
-                tarefaEl.dataset.metaTipo = t.tipo || 'diaria';
-                tarefaEl.dataset.metaTitulo = t.titulo;
-                tarefaEl.dataset.metaPrioridade = t.prioridade || 'Média';
-
+                const seloHtml = getSeloCicloMensalAnual(meta, dataKey, concluidaDia);
+                
                 tarefaEl.innerHTML = `
-                    <span class="tarefa-texto">${t.titulo}</span>
+                    <span class="tarefa-texto">${meta.texto} <small style="opacity: 0.7; color: var(--primary-blue-30)">(${meta.tipo})</small>${seloHtml}</span>
                     <div class="tarefa-botoes">
-                        <button class="btn-v ${concluidaDia === true ? 'active' : ''}" data-task-uuid="${t.id}">✓</button>
-                        <button class="btn-x ${concluidaDia === false ? 'active' : ''}" data-task-uuid="${t.id}">✗</button>
+                        <button class="btn-v ${concluidaDia === true ? 'active' : ''}" data-is-cyclic="true" data-task-id="${cyclicTaskId}">✓</button>
+                        <button class="btn-x ${concluidaDia === false ? 'active' : ''}" data-is-cyclic="true" data-task-id="${cyclicTaskId}">✗</button>
                     </div>
                 `;
-
+            
+                tarefaEl.dataset.concluida = concluidaDia === true ? 'true' : concluidaDia === false ? 'false' : 'neutral';
+                tarefaEl.dataset.taskId = cyclicTaskId;
+                tarefaEl.dataset.isCyclic = 'true';
+            
+                // Event listeners para cyclic (delegated)
                 tarefaEl.querySelector('.btn-v').addEventListener('click', handleTaskToggle);
                 tarefaEl.querySelector('.btn-x').addEventListener('click', handleTaskToggle);
-
-                grupoEl.appendChild(tarefaEl);
-            };
-
-            // Limpar e renderizar agrupado
-            tarefasContainer.innerHTML = '';
-
-            data.forEach(t => {
-                if (!deveAparecer(t)) return;
-
-                const tipo = t.tipo || 'diaria';
-                if (tipo === 'diaria') adicionarTarefaNoGrupo(t, metasDiariasEl);
-                else if (tipo === 'semanal') adicionarTarefaNoGrupo(t, metasSemanaisEl);
-                else if (tipo === 'mensal') adicionarTarefaNoGrupo(t, metasMensaisEl);
-                else if (tipo === 'anual') adicionarTarefaNoGrupo(t, metasAnuaisEl);
-                else adicionarTarefaNoGrupo(t, metasDiariasEl);
+            
+                tarefasContainer.appendChild(tarefaEl);
             });
-
-            appendIfHas(metasDiariasEl);
-            appendIfHas(metasSemanaisEl);
-            appendIfHas(metasMensaisEl);
-            appendIfHas(metasAnuaisEl);
-
-            // A eficiência do modal deve considerar só as tarefas que aparecem (agrupadas)
-            // (atualizarEficienciaModal já calcula com base no DOM atual)
-
-
-            // Inicializa eficiência inicial com base no dataset renderizado
+        
+        // ✅ UNIFICAR: Handler global para todos os toggles (já delegados)
+        function handleTaskToggle(e) {
+            const btn = e.target;
+            const tarefaEl = btn.closest('.tarefa-item');
+            const isCheck = btn.classList.contains('btn-v');
+            
+            tarefaEl.classList.toggle('concluida', isCheck);
+            tarefaEl.querySelector('.btn-v').classList.toggle('active', isCheck);
+            tarefaEl.querySelector('.btn-x').classList.toggle('active', !isCheck);
+            tarefaEl.dataset.concluida = isCheck ? 'true' : 'false';
+            
             atualizarEficienciaModal(modal);
-            el.classList.add('active');
-        } catch (err) {
-            console.error('[Supabase] abrirModalEficiencia falhou:', err);
-            tarefasContainer.innerHTML = '<p class="sem-tarefas">Erro ao carregar tarefas.</p>';
-            el.classList.add('active');
+            
+            // Salvar baseado no tipo - SEMPRE salva em calendario_tarefas_dia[taskId normal] para gráficos
+            const dataKeyLocal = modal.dataset.currentDataKey;
+            const taskIdLocal = tarefaEl.dataset.taskId;
+            const isCyclicLocal = tarefaEl.dataset.isCyclic === 'true';
+            const metaTipoLocal = tarefaEl.dataset.metaTipo || '';
+            
+            // SALVAR SEMPRE EM CALENDAR_TAREFAS para compatibilidade com gráficos individuais
+            salvarEstadoTarefaDia(dataKeyLocal, taskIdLocal, isCheck);
+            
+            if (isCyclicLocal) {
+                // ADICIONAL: Salvar também em cyclic se necessário (sem hall da fama aqui)
+                const todasCiclicas = renderizarMetasCiclicas(dataKeyLocal);
+                const meta = todasCiclicas.find(m => m.cyclicTaskId === taskIdLocal);
+                if (meta) {
+                    salvarEstadoTarefaCyclicDia(dataKeyLocal, taskIdLocal, isCheck, meta);
+                }
+                
+                // Coleta anual pendente para confirmar depois (track state)
+                if (metaTipoLocal === 'anual') {
+                    // Sempre track anual tasks, but only trigger on final true
+                    if (typeof window.pendingAnnualStates === 'undefined') {
+                        window.pendingAnnualStates = {};
+                    }
+                    window.pendingAnnualStates[taskIdLocal] = isCheck;
+                    
+                    if (isCheck) {
+                        // Animação e toast apenas quando marcado como feito
+                        if (window.confetti) {
+                            confetti({
+                                particleCount: 100,
+                                spread: 70,
+                                origin: { y: 0.6 },
+                                colors: ['#fbbf24', '#f59e0b', '#d97706']
+                            });
+                        }
+                        const toast = document.createElement('div');
+                        toast.className = 'motivacao-toast';
+                        toast.textContent = '🏆 Conquista anual marcada! Confirme para eternizar! 🔥';
+                        document.body.appendChild(toast);
+                        setTimeout(() => toast.remove(), 3500);
+                    }
+                }
+            }
+            
+            // FORCE UPDATE GRÁFICOS - destroy + recreate garante dados frescos
+            if (chartInstance) chartInstance.destroy();
+            renderIndividualCharts();
         }
-    })();
+        
+        // Calcular eficiência inicial baseada no total (daily + cyclic)
+        const eficiencia = totalTasks > 0 ? Math.round((conclusas / totalTasks) * 100) : 0;
+        atualizarDisplayEficiencia(el, eficiencia);
+    }
+    
+    // Inicializar pending states para este modal
+    if (typeof window.pendingAnnualStates === 'undefined') {
+        window.pendingAnnualStates = {};
+    } else {
+        window.pendingAnnualStates = {};
+    }
+    
+    el.classList.add('active');
 }
-
 
 function atualizarEficienciaModal(modal) {
     const tarefas = modal.querySelectorAll('.tarefa-item');
@@ -2284,6 +2155,7 @@ function gerarJanela10Dias(taskId, meta) {
  */
 function gerarJanelaCicloReal(meta, numCiclos = 4) {
     const dataCriacao = new Date(meta.dataCriacao);
+    const hoje = new Date();
     const janela = [];
 
     // Determinar intervalo baseado no tipo real (meta.tipo é mensal/semanal; meta.view pode não existir)
@@ -2296,6 +2168,7 @@ function gerarJanelaCicloReal(meta, numCiclos = 4) {
         try {
             const metasSemanais = JSON.parse(localStorage.getItem(STORAGE_KEYS.semanal) || '[]');
             const metasMensais = JSON.parse(localStorage.getItem(STORAGE_KEYS.mensal) || '[]');
+            // Procura por texto; (no app texto costuma ser único dentro do view)
             const achada = metasSemanais.find(m => m.texto === meta.texto) || metasMensais.find(m => m.texto === meta.texto);
             if (achada?.prioridade) prioridade = achada.prioridade;
         } catch (e) {
@@ -2304,6 +2177,7 @@ function gerarJanelaCicloReal(meta, numCiclos = 4) {
     }
 
     const taskId = `${meta.texto}-${prioridade}`;
+
 
     switch (tipo) {
         case 'semanal':
@@ -2316,26 +2190,14 @@ function gerarJanelaCicloReal(meta, numCiclos = 4) {
             return [];
     }
 
-    // IMPORTANTES para o seu bug:
-    // a janela precisa avançar conforme o ciclo atual (alinhada ao "hoje"), não ficar presa ao offset desde a criação.
-    // Então: calculamos o "ciclo atual" a partir da dataCriacao e do intervaloDias.
-    const hoje = new Date();
-    const diffDays = Math.floor((hoje - dataCriacao) / (1000 * 60 * 60 * 24));
-    const kAtual = Math.max(0, Math.floor(diffDays / intervaloDias));
-
-    // start atual (início do ciclo) e a referência do dia do ciclo para gerar a janela.
-    // No resto do código, a obrigatoriedade/cálculo do ciclo usa PRAZO_DIAS e base por criação.
-    const baseDoCiclo = new Date(dataCriacao);
-    baseDoCiclo.setDate(baseDoCiclo.getDate() + (kAtual * intervaloDias));
-
-    // Agora geramos os numCiclos pontos, retrocedendo a partir do início do ciclo atual.
-    // Isso faz, ao virar a semana, a janela "rolar" corretamente.
+    // Gerar pontos do passado baseado na dataCriacao (como já era)
     for (let i = numCiclos - 1; i >= 0; i--) {
-        const dataCiclo = new Date(baseDoCiclo);
+        const dataCiclo = new Date(dataCriacao);
         dataCiclo.setDate(dataCiclo.getDate() - (i * intervaloDias));
 
         const dataKey = `${dataCiclo.getFullYear()}-${String(dataCiclo.getMonth() + 1).padStart(2, '0')}-${String(dataCiclo.getDate()).padStart(2, '0')}`;
 
+        // Força isWeekly=true para cair no fallback e buscar em ciclicas_tarefas_dia
         const status = getTaskStatus(dataKey, taskId, true, meta);
 
         const dataFormatada = dataCiclo.toLocaleDateString('pt-BR', {
@@ -2354,7 +2216,6 @@ function gerarJanelaCicloReal(meta, numCiclos = 4) {
 
     return janela;
 }
-
 
 
 /**
@@ -2440,20 +2301,207 @@ function getDataOrigem() {
 }
 
 
-// Inicialização
-    initTema();
-    atualizarDataAtual();
-    carregarMetas('diario');
-    atualizarEstatisticas();
-    setupMidnightCheck();
-    setupCalendarNavigation();
+// Auth gating + Inicialização
+function ensureSupabaseReady(){
+        // Se o client não estiver pronto, tentamos falhar com mensagem mais acionável.
+        // (Em muitos projetos, o supabaseClient é criado em outro arquivo; aqui garantimos só a existência.)
+        if (!window.supabaseClient) {
+            // Não lançamos mais erro hard aqui: apenas deixamos a UI de login aparecer.
+            // A primeira chamada de auth vai falhar e mostrar a mensagem correspondente.
+            return false;
+        }
+        if (!window.supabaseClient.auth) {
+            return false;
+        }
+        return true;
+    }
+
+    async function iniciarApp(){
+        const ok = ensureSupabaseReady();
+        if (!ok) {
+            // Falha silenciosa: sem cliente Supabase não inicializa o app.
+            return;
+        }
+        // Logout button
+        const btnLogout = document.getElementById('btn-logout');
+        if (btnLogout) btnLogout.style.display = 'block';
+
+        initTema();
+        atualizarDataAtual();
+        carregarMetas('diario');
+        atualizarEstatisticas();
+        setupMidnightCheck();
+        setupCalendarNavigation();
+        
+        // Garantir dark mode toggle sempre funciona
+        document.addEventListener('click', (e) => {
+            const isThemeBtn = e.target.id === 'theme-toggle' || e.target.closest('#theme-toggle');
+            if (isThemeBtn) {
+                toggleTema();
+            }
+        });
+        window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', (e) => {
+            const temaSalvo = localStorage.getItem(STORAGE_THEME);
+            if (!temaSalvo) {
+                html.classList.toggle('dark-mode', e.matches);
+                if (document.getElementById('secao-estatisticas')?.classList.contains('active')) {
+                    renderEstatisticas();
+                }
+            }
+        });
+    }
+
+    function exibirTelaLogin(){
+        const loginScreen = document.getElementById('login-screen');
+        if (loginScreen) loginScreen.classList.remove('is-hidden');
+    }
+
+    function ocultarTelaLogin(){
+        const loginScreen = document.getElementById('login-screen');
+        if (loginScreen) loginScreen.classList.add('is-hidden');
+    }
+
+    function mostrarErro(msg){
+        const el = document.getElementById('auth-error');
+        if (!el) return;
+        el.textContent = msg;
+        el.style.display = 'block';
+    }
+
+    function limparErro(){
+        const el = document.getElementById('auth-error');
+        if (!el) return;
+        el.textContent = '';
+        el.style.display = 'none';
+    }
+
+    const loginEmailEl = document.getElementById('login-email');
+    const loginPasswordEl = document.getElementById('login-password');
+    const btnLogin = document.getElementById('btn-login');
+    const btnSignup = document.getElementById('btn-signup');
+    const btnLoginGoogle = document.getElementById('btn-login-google');
+    const btnLogout = document.getElementById('btn-logout');
+
+    if (btnLogout) btnLogout.addEventListener('click', async () => {
+        const confirmar = confirm('Deseja realmente sair?');
+        if (!confirmar) return;
+
+        try {
+            ensureSupabaseReady();
+            const { error } = await window.supabaseClient.auth.signOut();
+            if (error) throw error;
+            window.userId = null;
+            if (btnLogout) btnLogout.style.display = 'none';
+            ocultarTelaLogin();
+            exibirTelaLogin();
+        } catch (err) {
+            mostrarErro(err?.message || 'Falha ao sair.');
+        }
+    });
+
+    // Wire buttons login
+    if (btnLogin) btnLogin.addEventListener('click', async () => {
+        limparErro();
+        const email = loginEmailEl?.value?.trim();
+        const password = loginPasswordEl?.value;
+        if (!email || !password) return mostrarErro('Informe email e senha.');
+        try {
+            ensureSupabaseReady();
+            const { error } = await window.supabaseClient.auth.signInWithPassword({ email, password });
+            if (error) throw error;
+            const { data: { session } } = await window.supabaseClient.auth.getSession();
+            if (!session) throw new Error('Sessão não encontrada após login.');
+            window.userId = session.user.id;
+            ocultarTelaLogin();
+            await iniciarApp();
+        } catch (err) {
+            mostrarErro(err?.message || 'Falha ao entrar.');
+        }
+    });
+
+    if (btnSignup) btnSignup.addEventListener('click', async () => {
+        limparErro();
+        const email = loginEmailEl?.value?.trim();
+        const password = loginPasswordEl?.value;
+        if (!email || !password) return mostrarErro('Informe email e senha.');
+        try {
+            ensureSupabaseReady();
+            const { error } = await window.supabaseClient.auth.signUp({ email, password });
+            if (error) throw error;
+
+            // Após signUp, tentar pegar a sessão (depende do projeto: pode exigir confirmação).
+            const { data: { session } } = await window.supabaseClient.auth.getSession();
+            if (!session) {
+                // Mesmo sem sessão, usuário pode estar em fluxo de confirmação.
+                mostrarErro('Cadastro realizado. Verifique seu email para confirmar (se necessário).');
+                return;
+            }
+
+            window.userId = session.user.id;
+            await window.supabaseClient.from('perfil_usuario').insert([{
+                user_id: window.userId,
+                pontos: 0,
+                rank: 'Amador',
+                dias_ativos: 0,
+                streak: 0,
+                eficiencia: 0
+            }]);
+
+            ocultarTelaLogin();
+            await iniciarApp();
+        } catch (err) {
+            mostrarErro(err?.message || 'Falha ao cadastrar.');
+        }
+    });
+
+    if (btnLoginGoogle) btnLoginGoogle.addEventListener('click', async () => {
+        limparErro();
+        try {
+            ensureSupabaseReady();
+            const { error } = await window.supabaseClient.auth.signInWithOAuth({
+                provider: 'google',
+                options: { redirectTo: window.location.origin }
+            });
+            if (error) throw error;
+        } catch (err) {
+            mostrarErro(err?.message || 'Falha ao iniciar Google.');
+        }
+    });
+
+    // ===== DETECTAR SESSÃO AO CARREGAR =====
+    try {
+        ensureSupabaseReady();
+        const { data: { session } } = await window.supabaseClient.auth.getSession();
+        if (session) {
+            window.userId = session.user.id;
+            ocultarTelaLogin();
+            // garante logout visível e inicializa apenas quando logado
+            await iniciarApp();
+        } else {
+            window.userId = null;
+            exibirTelaLogin();
+        }
+    } catch (err) {
+        window.userId = null;
+        exibirTelaLogin();
+        mostrarErro(err?.message || 'Falha ao verificar sessão.');
+    }
+
+    // (o resto da inicialização foi movido para iniciarApp())
+    // initTema();
+    
+    // remove qualquer inicialização antiga duplicada
+    // atualizarDataAtual();
+    // carregarMetas('diario');
+    // atualizarEstatisticas();
+    // setupMidnightCheck();
+    // setupCalendarNavigation();
+    // (inicialização movida para iniciarApp)
     
     // Garantir dark mode toggle sempre funciona
-document.addEventListener('click', (e) => {
-    if (e.target.id === 'theme-toggle' || e.target.closest('#theme-toggle')) {
-        toggleTema();
-    }
-});
+// Listener do theme-toggle já está vinculado no botão/atalho via iniciarApp()
+// (mantemos apenas uma fonte para evitar double-toggle)
+
     window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', (e) => {
         const temaSalvo = localStorage.getItem(STORAGE_THEME);
         if (!temaSalvo) {

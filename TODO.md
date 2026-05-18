@@ -1,12 +1,11 @@
-# TODO - Integração Supabase (tarefas) no calendário/checkbox
-
-- [ ] Atualizar `abrirModalEficiencia(dataKey, dia)` para buscar no Supabase `tarefas` com `.eq('data', dataKey)` e renderizar `.tarefas-lista` a partir do resultado (em vez de localStorage).
-- [ ] No render dos itens do modal, armazenar o uuid `tarefas.id` em `dataset.taskId` (ou outro dataset, ex. `data-task-uuid`) para persistir ✓/✗ no Supabase corretamente.
-- [ ] Atualizar `handleTaskToggle` para fazer `update({concluida: isCheck}).eq('id', taskUuid)` usando o uuid do item do modal.
-- [ ] Adicionar logs conforme pedido:
-  - `console.log("Buscando tarefas para a data:", dataSelecionada)`
-  - `console.log("Tarefas encontradas:", data)`
-  - logar erros da query no console.
-- [ ] Atualizar pós-alteração: chamar `renderCalendar()` e `renderEstatisticas()`/`renderIndividualCharts()` quando necessário.
-- [ ] Testar: clicar em dias diferentes e confirmar lista do modal aparece e ✓/✗ persiste no Supabase.
+- [ ] Criar tela de login em index.html (overlay dark) + botão logout no header (oculto por padrão)
+- [ ] Adicionar estilos da tela de login e botões em style.css seguindo tema escuro
+- [ ] No script.js: criar exibir/ocultar login + iniciarApp()
+- [ ] No script.js: no início, checar sessão com window.supabaseClient.auth.getSession()
+- [ ] Implementar login email/senha e cadastro com criação de perfil_usuario (user_id)
+- [ ] Implementar login Google com signInWithOAuth
+- [ ] Implementar logout (signOut) e voltar para tela de login
+- [ ] Garantir que window.userId é preenchido após login
+- [ ] Garantir inserção em perfil_usuario usa user_id: window.userId
+- [ ] Testar manualmente: sem sessão / login / cadastro / logout / redirect Google
 
