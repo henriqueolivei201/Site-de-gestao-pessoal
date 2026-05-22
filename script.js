@@ -448,10 +448,15 @@ function getCicloAtualBase(metaCiclica, dataKeyAtual) {
 }
 
 function isObrigatoriaHoje(metaCiclica, dataKeyAtual) {
+    // Para metas anuais, a regra no app é aparecer em todos os dias do calendário.
+    // Então consideramos “obrigatória” sempre.
+    if (metaCiclica?.tipo === 'anual') return true;
+
     const ciclo = getCicloAtualBase(metaCiclica, dataKeyAtual);
     if (!ciclo) return false;
     return formatDataKeyYYYYMMDD(ciclo.prazoFinal) === dataKeyAtual;
 }
+
 
     function isConcluidaAntecipadamenteNoCiclo(metaCiclica, dataKeyAtual) {
     const ciclo = getCicloAtualBase(metaCiclica, dataKeyAtual);
@@ -837,7 +842,8 @@ async function salvarEstadoTarefaDia(dataKey, taskId, concluida) {
 // ===== NOVAS FUNÇÕES PARA METAS CÍCLICAS =====
 // Verifica se dataKey é dia de ciclo para meta mensal (mesmo dia do mês)
 function isDiaCicloMensal(meta, dataKey) {
-    const dataCriacao = new Date(meta.dataCriacao);
+    const origemIso = meta.criada_em || meta.dataCriacao;
+    const dataCriacao = new Date(origemIso);
     const dataHoje = new Date(dataKey + 'T00:00:00');
 
     const diaDoMesCriacao = dataCriacao.getDate();
@@ -845,8 +851,28 @@ function isDiaCicloMensal(meta, dataKey) {
 
     const resultado = diaDoMesCriacao === diaDoMesDataKey;
 
+    // LOG (para confirmar o bug do mensal no modal do calendário)
+    if (meta?.tipo === 'mensal') {
+        console.log('Mensal:', {
+            titulo: meta?.titulo,
+            criada_em: meta?.criada_em,
+            diaMes_criacao: diaDoMesCriacao,
+            diaMes_modal: diaDoMesDataKey,
+            passa: resultado
+        });
+    }
+
+    // DEBUG adicional (mantido)
     console.log('[DEBUG isDiaCicloMensal]', {
-        meta: { texto: meta?.texto, prioridade: meta?.prioridade, tipo: meta?.tipo, dataCriacao: meta?.dataCriacao },
+        meta: {
+            texto: meta?.texto,
+            titulo: meta?.titulo,
+            prioridade: meta?.prioridade,
+            tipo: meta?.tipo,
+            criada_em: meta?.criada_em,
+            dataCriacao: meta?.dataCriacao,
+            origemIso
+        },
         dataKey,
         diaDoMesCriacao,
         diaDoMesDataKey,
@@ -858,25 +884,36 @@ function isDiaCicloMensal(meta, dataKey) {
 
 // Verifica se dataKey é dia de ciclo para meta semanal (mesmo dia da semana da criação)
 function isDiaCicloSemanal(meta, dataKey) {
-    const dataCriacao = new Date(meta.dataCriacao);
+    const criadoEm = new Date(meta.criada_em || meta.dataCriacao);
     const dataHoje = new Date(dataKey + 'T00:00:00');
-    return dataCriacao.getDay() === dataHoje.getDay();
+    return criadoEm.getDay() === dataHoje.getDay();
 }
 
-// Verifica se dataKey é dia de ciclo para meta anual (mesma data)
+// Verifica se dataKey é dia de ciclo para meta anual
+// Regra do app: metas anuais aparecem em TODOS os dias do calendário (sem filtro por data)
 function isDiaCicloAnual(meta, dataKey) {
-    // A meta anual deve aparecer na lista de tarefas TODOS os dias.
-    // O conceito de "obrigatória hoje" fica para o cálculo da eficiência (via isObrigatoriaHoje).
     return true;
 }
 
 
 
+
+
 // Gera taskId único para metas cíclicas: 'cyc_[texto-prioridade]_[dataCriacao curta]'
 function getCyclicTaskId(meta) {
-    const dataCurta = meta.dataCriacao.split('T')[0].replace(/-/g, '');
-    return `cyc_${meta.texto.replace(/[^a-zA-Z0-9]/g, '_')}-${meta.prioridade}_${dataCurta}`;
+    const criadoEmIso = meta.criada_em || meta.dataCriacao;
+    const titulo = meta.titulo || meta.texto;
+    const prioridade = meta.prioridade || meta.tipo;
+
+    if (!criadoEmIso || !titulo || !prioridade) {
+        console.warn('[getCyclicTaskId] meta inválida para criar id:', meta);
+        return null;
+    }
+
+    const dataCurta = new Date(criadoEmIso).toISOString().split('T')[0].replace(/-/g, '');
+    return `cyc_${titulo.replace(/[^a-zA-Z0-9]/g, '_')}-${prioridade}_${dataCurta}`;
 }
+
 
 // ===== FUNÇÃO PRINCIPAL: renderizarMetasCiclicas(dataKey) =====
 /**
@@ -885,13 +922,20 @@ function getCyclicTaskId(meta) {
  * - Anual: mesma data (DD/MM) independente do ano
  * Formato: [{texto, prioridade, tipo: 'semanal'|'anual', cyclicTaskId, dataOrigem}]
  */
-function renderizarMetasCiclicas(dataKey) {
+function renderizarMetasCiclicas(dataKey, tarefasSupabase = []) {
     const metasCiclicas = [];
 
-    // Carregar metas_mensal
-    const metasMensais = JSON.parse(localStorage.getItem(STORAGE_KEYS.mensal) || '[]');
-    const metasSemanais = JSON.parse(localStorage.getItem(STORAGE_KEYS.semanal) || '[]');
-    const metasAnuais = JSON.parse(localStorage.getItem(STORAGE_KEYS.anual) || '[]');
+    // Fonte das metas cíclicas:
+    // - Se tarefasSupabase foi fornecido (modal do calendário), filtrar por tipo aqui
+    // - Caso contrário, manter fallback para localStorage
+    const metasMensais = tarefasSupabase.length ? (tarefasSupabase || []).filter(t => t.tipo === 'mensal') : JSON.parse(localStorage.getItem(STORAGE_KEYS.mensal) || '[]');
+    const metasSemanais = tarefasSupabase.length ? (tarefasSupabase || []).filter(t => t.tipo === 'semanal') : JSON.parse(localStorage.getItem(STORAGE_KEYS.semanal) || '[]');
+    const metasAnuais = tarefasSupabase.length ? (tarefasSupabase || []).filter(t => t.tipo === 'anual') : JSON.parse(localStorage.getItem(STORAGE_KEYS.anual) || '[]');
+
+
+    console.log('[DEBUG renderizarMetasCiclicas] dataKey (modal)', dataKey);
+    console.log('[DEBUG renderizarMetasCiclicas] semanais carregadas', metasSemanais.length);
+
 
     console.log('[DEBUG renderizarMetasCiclicas] carregadas', {
         dataKey,
@@ -920,9 +964,23 @@ function renderizarMetasCiclicas(dataKey) {
     // Carregar metas_semanal
     metasSemanais.forEach(meta => {
         const ehDia = isDiaCicloSemanal(meta, dataKey);
+
+        // DEBUG solicitado: logar semanal para entender parse/comparação
+        if (meta?.tipo === 'semanal') {
+            const dataCriacao = new Date(meta.criada_em);
+            const dataModal = new Date(dataKey);
+            console.log('Semanal:', {
+                titulo: meta.titulo,
+                criada_em: meta.criada_em,
+                diaSemana_criacao: dataCriacao.getDay(),
+                diaSemana_modal: dataModal.getDay(),
+                passa: dataCriacao.getDay() === dataModal.getDay()
+            });
+        }
+
         console.log('[DEBUG renderizarMetasCiclicas] semanal', {
             dataKey,
-            meta: { texto: meta?.texto, prioridade: meta?.prioridade, dataCriacao: meta?.dataCriacao },
+            meta: { titulo: meta?.titulo, prioridade: meta?.prioridade, criada_em: meta?.criada_em },
             isDiaCicloSemanal: ehDia
         });
 
@@ -934,6 +992,7 @@ function renderizarMetasCiclicas(dataKey) {
             });
         }
     });
+
 
     // Carregar metas_anual
     metasAnuais.forEach(meta => {
@@ -1203,8 +1262,9 @@ function renderCalendar() {
     }
 }
 
-function abrirModalEficiencia(dataKey, dia) {
+async function abrirModalEficiencia(dataKey, dia) {
     const calendarData = getCalendarData();
+
     const currentEff = calendarData[dataKey];
 
     // Modal existente reutilizar
@@ -1236,6 +1296,7 @@ modal.querySelector('#btn-cancelar-dia').addEventListener('click', () => modal.c
 // Limpar - remove a eficiência do dia E as tarefas individuais
         modal.querySelector('#btn-limpar-dia').addEventListener('click', () => {
             const currentDataKey = modal.dataset.currentDataKey;
+
             
             // 1. Remove eficiência do dia em calendario_dias
             const data = getCalendarData();
@@ -1334,12 +1395,47 @@ modal.querySelector('#btn-cancelar-dia').addEventListener('click', () => modal.c
         });
     }
 
-// Buscar tarefas DIÁRIAS do localStorage (todas, não filtrar por data)
-    // O usuário pode customizar qualquer dia, mesmo que tenha esquecido de acessar
-    const todasMetas = JSON.parse(localStorage.getItem(STORAGE_KEYS['diario']) || '[]');
-    
+// Buscar tarefas/Metas via Supabase (fonte de verdade)
+    // 1) Limpa chaves antigas que podem interferir
+    try {
+        localStorage.removeItem('metas_diario');
+        localStorage.removeItem('metas_semanal');
+        localStorage.removeItem('metas_mensal');
+        localStorage.removeItem('metas_anual');
+        localStorage.removeItem('calendario_tarefas_dia');
+        localStorage.removeItem('ciclicas_tarefas_dia');
+    } catch (e) {}
+
+    // 2) Carrega metas diárias cadastradas (tarefas tipo=diaria) para compor a lista do modal
+    const { data: tarefasSupabase, error: metasErr } = await window.supabaseClient
+        .from('tarefas')
+        .select('id, titulo, tipo, prioridade, concluida')
+        .eq('user_id', window.userId)
+        .in('tipo', ['diaria']);
+
+    if (metasErr) throw metasErr;
+
+    const todasMetas = (tarefasSupabase || [])
+        .filter(t => t.tipo === 'diaria');
+
     // NOVO: Buscar metas cíclicas elegíveis para HOJE
-    const metasCiclicas = renderizarMetasCiclicas(dataKey);
+    // IMPORTANTE: para semanal/mensal/anual aparecerem corretamente no modal,
+    // precisamos alimentar a renderização com os registros do Supabase.
+    // Então vamos carregar TODAS as tarefas do usuário (sem filtrar por tipo)
+    // e passar para renderizarMetasCiclicas via argumento.
+
+    const { data: tarefasModal, error: tarefasModalErr } = await window.supabaseClient
+        .from('tarefas')
+        .select('id, titulo, tipo, prioridade, concluida, criada_em')
+        .eq('user_id', window.userId);
+
+    if (tarefasModalErr) throw tarefasModalErr;
+
+    console.log('Tarefas passadas para renderizarMetasCiclicas:', tarefasModal);
+
+    const metasCiclicas = renderizarMetasCiclicas(dataKey, tarefasModal || []);
+
+
     
     // NOVO: Buscar estados cíclicos salvos para este dia
     const tarefasCiclicasSalvas = getTarefasCiclicasDoDia(dataKey);
@@ -1375,7 +1471,8 @@ modal.querySelector('#btn-cancelar-dia').addEventListener('click', () => modal.c
             if (concluidaDia === true) conclusas++;
             
             tarefaEl.innerHTML = `
-                <span class="tarefa-texto">${meta.texto} <small style="opacity: 0.7">(Diária)</small></span>
+                <span class="tarefa-texto">${meta.titulo ?? meta.texto} <small style="opacity: 0.7">(Diária)</small></span>
+
                 <div class="tarefa-botoes">
                     <button class="btn-v ${concluidaDia === true ? 'active' : ''}" data-is-cyclic="false" data-task-id="${taskId}">✓</button>
                     <button class="btn-x ${concluidaDia === false ? 'active' : ''}" data-is-cyclic="false" data-task-id="${taskId}">✗</button>
@@ -1462,7 +1559,8 @@ modal.querySelector('#btn-cancelar-dia').addEventListener('click', () => modal.c
                 const seloHtml = getSeloCicloMensalAnual(meta, dataKey, concluidaDia);
                 
                 tarefaEl.innerHTML = `
-                    <span class="tarefa-texto">${meta.texto} <small style="opacity: 0.7; color: var(--primary-blue-30)">(${meta.tipo})</small>${seloHtml}</span>
+                    <span class="tarefa-texto">${meta.titulo ?? meta.texto} <small style="opacity: 0.7; color: var(--primary-blue-30)">(${meta.tipo})</small>${seloHtml}</span>
+
                     <div class="tarefa-botoes">
                         <button class="btn-v ${concluidaDia === true ? 'active' : ''}" data-is-cyclic="true" data-task-id="${cyclicTaskId}">✓</button>
                         <button class="btn-x ${concluidaDia === false ? 'active' : ''}" data-is-cyclic="true" data-task-id="${cyclicTaskId}">✗</button>
