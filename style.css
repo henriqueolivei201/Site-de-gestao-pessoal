@@ -1543,7 +1543,20 @@ canvas {
     border-color: rgba(239, 68, 68, 0.3);
 }
 
+/* classes alternativas normalizadas (media/baixa/alta) */
+.etiqueta-prioridade.prioridade-alta {
+    background: rgba(239, 68, 68, 0.15);
+    color: #dc2626;
+    border-color: rgba(239, 68, 68, 0.3);
+}
+
 .etiqueta-prioridade.média {
+    background: rgba(245, 158, 11, 0.15);
+    color: #f59e0b;
+    border-color: rgba(245, 158, 11, 0.3);
+}
+
+.etiqueta-prioridade.prioridade-media {
     background: rgba(245, 158, 11, 0.15);
     color: #f59e0b;
     border-color: rgba(245, 158, 11, 0.3);
@@ -1554,6 +1567,13 @@ canvas {
     color: var(--success);
     border-color: rgba(16, 185, 129, 0.3);
 }
+
+.etiqueta-prioridade.prioridade-baixa {
+    background: rgba(16, 185, 129, 0.15);
+    color: var(--success);
+    border-color: rgba(16, 185, 129, 0.3);
+}
+
 
 /* Animações */
 @keyframes fadeIn {

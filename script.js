@@ -54,7 +54,7 @@ document.addEventListener('DOMContentLoaded', async function() {
         anual: 'metas_anual',
         stats: 'estatisticas_geral',
         ciclicas: 'ciclicas_tarefas_dia',
-        pontuacao: 'historico_pontuacao'
+        pontuacao: 'historico_pontuaao'
     };
 
     let prioridadeSelecionada = 'Média';
@@ -122,7 +122,7 @@ document.addEventListener('DOMContentLoaded', async function() {
         modalOverlay.classList.remove('active');
     }
 
-    function confirmarMeta() {
+async function confirmarMeta() {
         const texto = metaInput.value.trim();
         if (!texto) {
             metaInput.style.borderColor = 'var(--danger)';
@@ -134,11 +134,28 @@ document.addEventListener('DOMContentLoaded', async function() {
         const listaContainer = secaoAtiva.querySelector('.goals-container');
         const view = secaoAtiva.id.replace('secao-', '');
 
-        const novaMeta = criarElementoMeta(texto, prioridadeSelecionada, view);
+        // Cria o card imediatamente (mantém a UX), mas a fonte de verdade passa a ser o Supabase.
+        const normalizarPrioridade = (valor) => (valor || '')
+            .toLowerCase()
+            .normalize('NFD')
+            .replace(/[\u0300-\u036f]/g, '');
+
+        const novaMeta = criarElementoMeta(texto, normalizarPrioridade(prioridadeSelecionada), view, null);
+
         listaContainer.insertBefore(novaMeta, listaContainer.firstChild);
-        salvarMeta(view, texto, prioridadeSelecionada);
-        atualizarEstatisticas();
-        fecharModal();
+
+
+        try {
+            await salvarMeta(view, texto, prioridadeSelecionada);
+            // Garantia: Supabase já voltou com o estado atualizado e a UI foi re-renderizada.
+            // (salvarMeta já chama carregarMetas(view), mas mantemos aqui explícito para evitar regressão)
+            await carregarMetas(view);
+            atualizarEstatisticas();
+        } catch (e) {
+            console.error('Erro ao confirmar meta:', e);
+        } finally {
+            fecharModal();
+        }
     }
 
     // Event listeners
@@ -218,65 +235,185 @@ navItems.forEach(item => {
         return diasPassados > prazoDias && !meta.concluida;
     }
 
-function criarElementoMeta(texto, prioridade, view) {
+function criarElementoMeta(texto, prioridade, view, supabaseId) {
         const article = document.createElement('article');
         article.className = 'goal-item';
+        article.dataset.id = supabaseId;
+        const labelPrioridade = {
+            alta: 'ALTA',
+            media: 'MÉDIA',
+            baixa: 'BAIXA'
+        };
+        
+        const classePrioridade = {
+            alta: 'prioridade-alta',
+            media: 'prioridade-media',
+            baixa: 'prioridade-baixa'
+        };
+
+        const prioridadeNorm = String(prioridade || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+        const textoLabel = labelPrioridade[prioridadeNorm] || prioridade;
+        const classePrior = classePrioridade[prioridadeNorm] || prioridadeNorm;
+
         article.innerHTML = `
             <span class="goal-texto">${texto}</span>
-            <span class="etiqueta-prioridade ${prioridade.toLowerCase()}">${prioridade}</span>
+            <span class="etiqueta-prioridade ${classePrior}">${textoLabel}</span>
             <button class="btn-excluir" aria-label="Excluir meta">&times;</button>
         `;
+
         
         const deleteBtn = article.querySelector('.btn-excluir');
         
-        deleteBtn.addEventListener('click', () => {
-            removerMeta(view, texto);
-            article.remove();
-            atualizarEstatisticas();
+        deleteBtn.addEventListener('click', async () => {
+            try {
+                const tarefaId = article.dataset.id;
+                if (!tarefaId) throw new Error('ID da tarefa não encontrado no elemento.');
+
+                // mantém UI otimista: remove o card e em seguida deleta no Supabase
+                article.remove();
+
+                await window.supabaseClient
+                    .from('tarefas')
+                    .delete()
+                    .eq('id', tarefaId)
+                    .eq('user_id', window.userId);
+
+                await carregarMetas(view);
+            } catch (e) {
+                console.error('Erro ao excluir meta (Supabase):', e);
+                // recarrega para restaurar estado correto
+                await carregarMetas(view);
+            } finally {
+                atualizarEstatisticas();
+            }
         });
         
         return article;
     }
 
-    function salvarMeta(view, texto, prioridade) {
-        let metas = JSON.parse(localStorage.getItem(STORAGE_KEYS[view]) || '[]');
-        metas.unshift({
-            texto,
-            prioridade, 
-            concluida: false,
-            dataCriacao: new Date().toISOString(),
-            prazoDias: getPrazoDias(view)
-        });
-        localStorage.setItem(STORAGE_KEYS[view], JSON.stringify(metas));
-    }
 
-    function removerMeta(view, texto) {
-        let metas = JSON.parse(localStorage.getItem(STORAGE_KEYS[view]) || '[]');
-        metas = metas.filter(meta => meta.texto !== texto);
-        localStorage.setItem(STORAGE_KEYS[view], JSON.stringify(metas));
-    }
+async function salvarMeta(view, texto, prioridade) {
+        try {
+            if (!window.userId) throw new Error('Usuário não autenticado.');
 
-    function salvarEstadoCheckbox(article, concluida, texto, prioridade, view) {
-        let metas = JSON.parse(localStorage.getItem(STORAGE_KEYS[view]) || '[]');
-        const index = metas.findIndex(m => m.texto === texto && m.prioridade === prioridade);
-        if (index !== -1) {
-            metas[index].concluida = concluida;
-            if (concluida) metas[index].concluidaData = new Date().toISOString();
-            localStorage.setItem(STORAGE_KEYS[view], JSON.stringify(metas));
+// tabela tarefas: titulo/tipo/prioridade/user_id
+
+            const tipoMap = {
+                diario: 'diaria',
+                semanal: 'semanal',
+                mensal: 'mensal',
+                anual: 'anual'
+            };
+
+            const normalizarPrioridade = (valor) => (valor || '')
+                .toLowerCase()
+                .normalize('NFD')
+                .replace(/[\u0300-\u036f]/g, '');
+
+            const payload = {
+                titulo: texto,
+                tipo: tipoMap[view] || view,
+                prioridade: normalizarPrioridade(prioridade),
+
+                user_id: window.userId,
+                // usar null aqui para bater com o exemplo do console (e evitar rejeição por constraint)
+                concluida: null,
+                criada_em: new Date().toISOString()
+            };
+
+
+            console.log('Dados do insert (payload):', JSON.stringify(payload, null, 2));
+
+            await window.supabaseClient
+                .from('tarefas')
+                .insert([payload]);
+
+            // Recarrega metas para atualizar UI
+            await carregarMetas(view);
+        } catch (err) {
+            console.error('Erro ao criar meta (Supabase):', err);
+            alert(err?.message || 'Falha ao criar meta.');
         }
     }
 
-function carregarMetas(view) {
+    async function removerMeta(view, texto) {
+        try {
+            if (!window.userId) throw new Error('Usuário não autenticado.');
+
+            // Remove todas linhas da tarefa que casam titulo/tipo e user
+            // (como o app não usa uuid, remove por filtros lógicos)
+            const { data: existentes, error: selErr } = await window.supabaseClient
+                .from('tarefas')
+                .select('id')
+                .eq('user_id', window.userId)
+                .eq('titulo', texto)
+                .eq('tipo', view);
+
+            if (selErr) throw selErr;
+
+            const ids = (existentes || []).map(r => r.id);
+            if (ids.length === 0) return;
+
+            await window.supabaseClient
+                .from('tarefas')
+                .delete()
+                .in('id', ids);
+
+            await carregarMetas(view);
+        } catch (err) {
+            console.error('Erro ao remover meta (Supabase):', err);
+            alert(err?.message || 'Falha ao remover meta.');
+        }
+    }
+
+    function salvarEstadoCheckbox(article, concluida, texto, prioridade, view) {
+        // Mantido para não mexer em lógica não usada no fluxo atual
+        // (a migração de concluida global das metas é tratada pela tabela tarefas via etapas futuras)
+    }
+
+    async function carregarMetas(view) {
         const container = document.getElementById(`lista-${view}`);
         if (!container) return;
 
-        container.innerHTML = '';
-        const metas = JSON.parse(localStorage.getItem(STORAGE_KEYS[view]) || '[]');
-        
-        metas.forEach(meta => {
-            const elemento = criarElementoMeta(meta.texto, meta.prioridade, view);
-            container.appendChild(elemento);
-        });
+        try {
+            container.innerHTML = '';
+            if (!window.userId) return;
+
+            const tipoMap = {
+                diario: 'diaria',
+                semanal: 'semanal',
+                mensal: 'mensal',
+                anual: 'anual'
+            };
+
+            const tipoUsado = tipoMap[view] || view;
+            console.log('Filtros (carregarMetas):', {
+                user_id: window.userId,
+                view,
+                tipoUsado
+            });
+
+            const { data: metas, error } = await window.supabaseClient
+                .from('tarefas')
+                .select('id, titulo, tipo, prioridade, concluida, criada_em')
+                .eq('user_id', window.userId)
+                .eq('tipo', tipoUsado);
+
+
+            console.log(`Tarefas retornadas (view=${view}):`, { metas, error });
+
+
+            if (error) throw error;
+
+            (metas || []).forEach((meta) => {
+                const elemento = criarElementoMeta(meta.titulo, meta.prioridade, view, meta.id);
+                container.appendChild(elemento);
+            });
+
+        } catch (err) {
+            console.error('Erro ao carregar metas (Supabase):', err);
+            container.innerHTML = '<p class="no-data-message">Falha ao carregar metas.</p>';
+        }
     }
 
 // ===== CALENDÁRIO =====
@@ -622,24 +759,79 @@ function saveCalendarData(data) {
     localStorage.setItem(CALENDAR_STORAGE, JSON.stringify(data));
 }
 
-// NOVA: Função para obter status das tarefas de um dia específico
-function getTarefasDoDia(dataKey) {
-    const tarefasDia = JSON.parse(localStorage.getItem(CALENDAR_TAREFAS) || '{}');
-    return tarefasDia[dataKey] || {};
+// NOVA: Função para obter status das tarefas de um dia específico (Supabase)
+async function getTarefasDoDia(dataKey) {
+    try {
+        const { data, error } = await window.supabaseClient
+            .from('tarefas')
+            .select('id, titulo, tipo, prioridade, concluida, data, criada_em')
+            .eq('user_id', window.userId)
+            .eq('data', dataKey);
+
+        if (error) throw error;
+
+        // Mantém o mesmo formato que o restante do app espera: { [taskId]: boolean }
+        // taskId no código é `${titulo}-${prioridade}` (diárias) e também é usado em alguns pontos.
+        const tarefasDia = {};
+        (data || []).forEach(row => {
+            const titulo = row.titulo ?? '';
+            const prioridade = row.prioridade ?? '';
+            const taskId = `${titulo}-${prioridade}`;
+            tarefasDia[taskId] = row.concluida;
+        });
+        return tarefasDia;
+    } catch (err) {
+        console.error('Erro ao obter tarefas do dia (Supabase):', err);
+        return {};
+    }
 }
 
-// NOVA: Função para salvar status das tarefas de um dia específico
-function saveTarefasDoDia(dataKey, tarefasStatus) {
-    const tarefasDia = JSON.parse(localStorage.getItem(CALENDAR_TAREFAS) || '{}');
-    tarefasDia[dataKey] = tarefasStatus;
-    localStorage.setItem(CALENDAR_TAREFAS, JSON.stringify(tarefasDia));
-}
+// NOVA: Função para salvar estado de uma tarefa específica de um dia (Supabase)
+async function salvarEstadoTarefaDia(dataKey, taskId, concluida) {
+    // taskId = `${titulo}-${prioridade}` no seu código atual
+    const [titulo, prioridade] = (taskId || '').split('-');
+    const tipo = 'diaria';
 
-// NOVA: Função para salvar estado de uma tarefa específica de um dia
-function salvarEstadoTarefaDia(dataKey, taskId, concluida) {
-    const tarefasDia = getTarefasDoDia(dataKey);
-    tarefasDia[taskId] = concluida;
-    saveTarefasDoDia(dataKey, tarefasDia);
+    try {
+        // Atualizar primeiro (porque o id é uuid e não temos). Se não existir, inserir.
+        const { data: existentes, error: selErr } = await window.supabaseClient
+            .from('tarefas')
+            .select('id')
+            .eq('user_id', window.userId)
+            .eq('data', dataKey)
+            .eq('titulo', titulo)
+            .eq('tipo', tipo)
+            .eq('prioridade', prioridade);
+
+        if (selErr) throw selErr;
+
+        const existing = (existentes || [])[0];
+
+        if (existing?.id) {
+            const { error: updErr } = await window.supabaseClient
+                .from('tarefas')
+                .update({ concluida: concluida })
+                .eq('id', existing.id)
+                .eq('user_id', window.userId);
+
+            if (updErr) throw updErr;
+        } else {
+            const { error: insErr } = await window.supabaseClient
+                .from('tarefas')
+                .insert([{
+                    titulo: titulo,
+                    data: dataKey,
+                    concluida: concluida,
+                    tipo: tipo,
+                    prioridade: prioridade,
+                    user_id: window.userId
+                }]);
+
+            if (insErr) throw insErr;
+        }
+    } catch (err) {
+        console.error('Erro ao salvar estado da tarefa do dia (Supabase):', err);
+    }
 }
 
 // ===== NOVAS FUNÇÕES PARA METAS CÍCLICAS =====
