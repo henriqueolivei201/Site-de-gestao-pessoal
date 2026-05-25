@@ -1,11 +1,16 @@
-- [ ] Criar tela de login em index.html (overlay dark) + botão logout no header (oculto por padrão)
-- [ ] Adicionar estilos da tela de login e botões em style.css seguindo tema escuro
-- [ ] No script.js: criar exibir/ocultar login + iniciarApp()
-- [ ] No script.js: no início, checar sessão com window.supabaseClient.auth.getSession()
-- [ ] Implementar login email/senha e cadastro com criação de perfil_usuario (user_id)
-- [ ] Implementar login Google com signInWithOAuth
-- [ ] Implementar logout (signOut) e voltar para tela de login
-- [ ] Garantir que window.userId é preenchido após login
-- [ ] Garantir inserção em perfil_usuario usa user_id: window.userId
-- [ ] Testar manualmente: sem sessão / login / cadastro / logout / redirect Google
+- [ ] Atualizar `abrirModalEficiencia` para carregar:
+  - [ ] buscar `tarefas` do Supabase (user_id)
+  - [ ] buscar `registros` do dia (user_id + data)
+  - [ ] combinar e preencher `status` (null/true/false) nos cards do modal
+- [ ] Atualizar `handleTaskToggle` para salvar via Supabase:
+  - [ ] inserir `tarefaEl.dataset.tarefaId`
+  - [ ] fazer `upsert` em `registros` usando UNIQUE(tarefa_id,data,user_id)
+- [ ] Atualizar botão “Limpar” do modal:
+  - [ ] remover registros do dia em `registros` (e manter lógica de eficiência/localStorage existente)
+- [ ] Teste manual do modal:
+  - [ ] marcar ✓, persistir em `registros`
+  - [ ] marcar ✗, persistir em `registros`
+  - [ ] abrir outro dia e conferir status
+  - [ ] limpar dia e conferir neutralização
+- [ ] Não mexer em gráficos/estatísticas (apenas modal por enquanto)
 

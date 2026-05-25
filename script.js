@@ -395,9 +395,10 @@ async function salvarMeta(view, texto, prioridade) {
 
             const { data: metas, error } = await window.supabaseClient
                 .from('tarefas')
-                .select('id, titulo, tipo, prioridade, concluida, criada_em')
+                .select('id, titulo, tipo, prioridade, criada_em')
                 .eq('user_id', window.userId)
                 .eq('tipo', tipoUsado);
+
 
 
             console.log(`Tarefas retornadas (view=${view}):`, { metas, error });
@@ -493,7 +494,7 @@ function getRankAtual(pontuacaoTotal) {
     return rankAtual;
 }
 
-function renderPontuacao() {
+async function renderPontuacao() {
     const pontuacaoTotalDisplay = document.getElementById('pontuacao-total-display');
     const pontuacaoRankDisplay = document.getElementById('pontuacao-rank-display');
     const conquistasContainer = document.getElementById('conquistas-container');
@@ -501,13 +502,49 @@ function renderPontuacao() {
 
     if (!pontuacaoTotalDisplay || !pontuacaoRankDisplay || !conquistasContainer || !canvasEl) return;
 
-    // Pontuação total atual
-    const pontuacaoTotal = calcularPontuacaoTotal();
+    // Pontuação total calculada (fonte de cálculo)
+    const pontuacaoTotal = await calcularPontuacaoTotal();
     const rankAtual = getRankAtual(Math.max(0, pontuacaoTotal));
 
-    // UI base
-    pontuacaoTotalDisplay.textContent = `${pontuacaoTotal} pts`;
-    pontuacaoRankDisplay.innerHTML = `${rankAtual.icon} <strong>${rankAtual.nome}</strong>`;
+    // Persistir no Supabase (fonte de verdade)
+    let userData = null;
+    try {
+        const { data, error: selErr } = await window.supabaseClient
+            .from('perfil_usuario')
+            .select('pontos, rank')
+            .eq('user_id', window.userId)
+            .single();
+
+        if (selErr) throw selErr;
+        userData = data;
+
+
+        const novosPontos = Math.round(pontuacaoTotal);
+        const novoRank = rankAtual?.nome;
+
+        // Update apenas se mudou (evita writes desnecessários)
+        if (userData?.pontos !== novosPontos || userData?.rank !== novoRank) {
+            const { error: updErr } = await window.supabaseClient
+                .from('perfil_usuario')
+                .update({ pontos: novosPontos, rank: novoRank })
+                .eq('user_id', window.userId);
+
+            if (updErr) throw updErr;
+        }
+    } catch (err) {
+        console.error('Erro ao persistir pontuação no Supabase:', err);
+    }
+
+    // UI base (fonte de verdade: Supabase)
+    const pontosSupabase = Number(userData?.pontos ?? pontuacaoTotal);
+    const rankSupabase = userData?.rank ?? rankAtual?.nome;
+
+    pontuacaoTotalDisplay.textContent = `${Math.max(0, Math.round(pontosSupabase))} pts`;
+
+    // rankSupabase pode ser nome; garantir render com icon correto
+    const rankObj = RANKS.find(r => r.nome === rankSupabase) || rankAtual;
+    pontuacaoRankDisplay.innerHTML = `${rankObj.icon} <strong>${rankObj.nome}</strong>`;
+
 
     // Garantir chart limpo
     if (chartInstance) {
@@ -602,108 +639,32 @@ function renderPontuacao() {
 }
 
 
-function calcularPontuacaoTotal() {
-    const tarefasDia = JSON.parse(localStorage.getItem(CALENDAR_TAREFAS) || '{}');
+async function calcularPontuacaoTotal() {
+  const { data: registros, error: errReg } = await window.supabaseClient
+    .from('registros')
+    .select('status, tarefa_id')
+    .eq('user_id', window.userId)
 
-    // IMPORTANTE (fix): semanal/mensal/anual estão sendo persistidas no mesmo storage de calendar:
-    // calendario_tarefas_dia[dataKey]['cyc_...']
-    // ciclicas_tarefas_dia pode estar vazio/defasado.
-    const tarefasCiclicas = tarefasDia;
+  const { data: tarefas, error: errTar } = await window.supabaseClient
+    .from('tarefas')
+    .select('id, tipo')
+    .eq('user_id', window.userId)
 
-    const metasDiarias = JSON.parse(localStorage.getItem(STORAGE_KEYS.diario) || '[]');
-    const metasSemanais = JSON.parse(localStorage.getItem(STORAGE_KEYS.semanal) || '[]');
-    const metasMensais = JSON.parse(localStorage.getItem(STORAGE_KEYS.mensal) || '[]');
-    const metasAnuais = JSON.parse(localStorage.getItem(STORAGE_KEYS.anual) || '[]');
+  if (errReg || errTar || !registros || !tarefas) return 0
 
-    let total = 0;
+  const pontos = { diaria: 1, semanal: 7, mensal: 30, anual: 365 }
+  let total = 0
 
-    // Diárias — taskId simples: "texto-prioridade"
-    Object.values(tarefasDia).forEach(diaObj => {
-        // FIX #3: multiplicador recalculado com total acumulado até agora (não fixo em zero)
-        const mult = getRankAtual(Math.max(0, total)).punicao;
-        metasDiarias.forEach(meta => {
-            const taskId = `${meta.texto}-${meta.prioridade}`;
-            if (diaObj[taskId] === true) total += PONTOS_POR_TIPO.diario;
-            else if (diaObj[taskId] === false) total -= PONTOS_POR_TIPO.diario * mult;
-        });
-    });
+  registros.forEach(r => {
+    const tarefa = tarefas.find(t => t.id === r.tarefa_id)
+    if (!tarefa) return
+    if (r.status === true) total += pontos[tarefa.tipo] || 0
+    if (r.status === false) total -= pontos[tarefa.tipo] || 0
+  })
 
-
-    // Cíclicas — taskId com getCyclicTaskId(): "cyc_texto-Prioridade_YYYYMMDD"
-    Object.values(tarefasCiclicas).forEach((diaObj, idx) => {
-        // FIX #3: multiplicador recalculado com total acumulado até agora
-        const mult = getRankAtual(Math.max(0, total)).punicao;
-
-        metasSemanais.forEach(meta => {
-            const taskId = getCyclicTaskId(meta);
-            const existe = Object.prototype.hasOwnProperty.call(diaObj, taskId);
-
-            if (idx < 5) {
-                console.log('[DEBUG calcularPontuacaoTotal] semanal', {
-                    idx,
-                    taskId,
-                    existeComoChave: existe,
-                    valor: existe ? diaObj[taskId] : undefined,
-                    multAtual: mult
-                });
-            }
-
-            if (diaObj[taskId] === true) total += PONTOS_POR_TIPO.semanal;
-            else if (diaObj[taskId] === false) total -= PONTOS_POR_TIPO.semanal * mult;
-        });
-
-        // FIX #2: mensais agora usam cyclicTaskId e buscam em ciclicas_tarefas_dia
-        metasMensais.forEach(meta => {
-            const taskId = getCyclicTaskId(meta);
-            const existe = Object.prototype.hasOwnProperty.call(diaObj, taskId);
-
-            console.log('[DEBUG calcularPontuacaoTotal] mensal', {
-                idx,
-                meta: { texto: meta?.texto, prioridade: meta?.prioridade, dataCriacao: meta?.dataCriacao },
-                taskId,
-                existeComoChave: existe,
-                valorNoDiaObj: existe ? diaObj[taskId] : undefined,
-                multAtual: mult,
-                totalAntes: total
-            });
-
-            if (diaObj[taskId] === true) {
-                total += PONTOS_POR_TIPO.mensal;
-                console.log('[DEBUG calcularPontuacaoTotal] mensal +', {
-                    taskId,
-                    totalDepois: total
-                });
-            } else if (diaObj[taskId] === false) {
-                total -= PONTOS_POR_TIPO.mensal * mult;
-                console.log('[DEBUG calcularPontuacaoTotal] mensal -', {
-                    taskId,
-                    totalDepois: total
-                });
-            }
-        });
-
-        metasAnuais.forEach(meta => {
-            const taskId = getCyclicTaskId(meta);
-            const existe = Object.prototype.hasOwnProperty.call(diaObj, taskId);
-
-            if (idx < 5) {
-                console.log('[DEBUG calcularPontuacaoTotal] anual', {
-                    idx,
-                    taskId,
-                    existeComoChave: existe,
-                    valor: existe ? diaObj[taskId] : undefined,
-                    multAtual: mult
-                });
-            }
-
-            if (diaObj[taskId] === true) total += PONTOS_POR_TIPO.anual;
-            else if (diaObj[taskId] === false) total -= PONTOS_POR_TIPO.anual * mult;
-        });
-    });
-
-    console.log('[DEBUG calcularPontuacaoTotal] total final', { total });
-    return Math.round(total);
+  return Math.max(0, total)
 }
+
 
 // --- Fim do calcularPontuacaoTotal() ---
 
@@ -765,25 +726,48 @@ function saveCalendarData(data) {
 }
 
 // NOVA: Função para obter status das tarefas de um dia específico (Supabase)
+// OBS: 'tarefas' não tem coluna 'data' no seu schema atual.
+// Então: buscamos as tarefas do usuário (UUID + titulo/prioridade)
+// e cruzamos com os registros do dia em `registros`.
 async function getTarefasDoDia(dataKey) {
     try {
-        const { data, error } = await window.supabaseClient
+        if (!window.userId) return {};
+
+        // 1) Tarefas (sem filtro de data)
+        const { data: tarefas, error: tarefasErr } = await window.supabaseClient
             .from('tarefas')
-            .select('id, titulo, tipo, prioridade, concluida, data, criada_em')
+            .select('id, titulo, prioridade, tipo');
+
+        if (tarefasErr) throw tarefasErr;
+
+        // 2) Registros do dia (status por tarefa_id)
+        const { data: registros, error: registrosErr } = await window.supabaseClient
+            .from('registros')
+            .select('tarefa_id, status')
             .eq('user_id', window.userId)
             .eq('data', dataKey);
 
-        if (error) throw error;
+        if (registrosErr) throw registrosErr;
 
-        // Mantém o mesmo formato que o restante do app espera: { [taskId]: boolean }
-        // taskId no código é `${titulo}-${prioridade}` (diárias) e também é usado em alguns pontos.
         const tarefasDia = {};
-        (data || []).forEach(row => {
+
+        // Converte registros: tarefa_id -> status
+        const registrosByTaskId = {};
+        (registros || []).forEach(r => {
+            if (r?.tarefa_id) registrosByTaskId[r.tarefa_id] = r.status;
+        });
+
+        // Mantém formato esperado pelo app: { [taskId]: boolean }
+        (tarefas || []).forEach(row => {
             const titulo = row.titulo ?? '';
             const prioridade = row.prioridade ?? '';
             const taskId = `${titulo}-${prioridade}`;
-            tarefasDia[taskId] = row.concluida;
+
+            if (Object.prototype.hasOwnProperty.call(registrosByTaskId, row.id)) {
+                tarefasDia[taskId] = registrosByTaskId[row.id];
+            }
         });
+
         return tarefasDia;
     } catch (err) {
         console.error('Erro ao obter tarefas do dia (Supabase):', err);
@@ -791,51 +775,37 @@ async function getTarefasDoDia(dataKey) {
     }
 }
 
+
 // NOVA: Função para salvar estado de uma tarefa específica de um dia (Supabase)
-async function salvarEstadoTarefaDia(dataKey, taskId, concluida) {
-    // taskId = `${titulo}-${prioridade}` no seu código atual
-    const [titulo, prioridade] = (taskId || '').split('-');
-    const tipo = 'diaria';
-
+// NOVO: salva status por dia na tabela `registros`
+// - taskId é UUID de `tarefas`
+// - status: boolean (true=feita, false=não feita)
+//
+// IMPORTANTE: o modal deve setar tarefaEl.dataset.tarefaId
+async function salvarEstadoRegistroDia(dataKey, tarefaId, statusBoolean) {
     try {
-        // Atualizar primeiro (porque o id é uuid e não temos). Se não existir, inserir.
-        const { data: existentes, error: selErr } = await window.supabaseClient
-            .from('tarefas')
-            .select('id')
-            .eq('user_id', window.userId)
-            .eq('data', dataKey)
-            .eq('titulo', titulo)
-            .eq('tipo', tipo)
-            .eq('prioridade', prioridade);
+        if (!window.userId) throw new Error('Usuário não autenticado.');
+        if (!tarefaId) throw new Error('tarefaId (UUID) não encontrado.');
+        if (typeof statusBoolean !== 'boolean') throw new Error('statusBoolean deve ser boolean.');
 
-        if (selErr) throw selErr;
-
-        const existing = (existentes || [])[0];
-
-        if (existing?.id) {
-            const { error: updErr } = await window.supabaseClient
-                .from('tarefas')
-                .update({ concluida: concluida })
-                .eq('id', existing.id)
-                .eq('user_id', window.userId);
-
-            if (updErr) throw updErr;
-        } else {
-            const { error: insErr } = await window.supabaseClient
-                .from('tarefas')
-                .insert([{
-                    titulo: titulo,
+        const { error } = await window.supabaseClient
+            .from('registros')
+            .upsert(
+                {
+                    tarefa_id: tarefaId,
+                    user_id: window.userId,
                     data: dataKey,
-                    concluida: concluida,
-                    tipo: tipo,
-                    prioridade: prioridade,
-                    user_id: window.userId
-                }]);
+                    status: statusBoolean
+                },
+                {
+                    // UNIQUE(tarefa_id, data, user_id)
+                    onConflict: 'tarefa_id,data,user_id'
+                }
+            );
 
-            if (insErr) throw insErr;
-        }
+        if (error) throw error;
     } catch (err) {
-        console.error('Erro ao salvar estado da tarefa do dia (Supabase):', err);
+        console.error('Erro ao salvar estado da tarefa no registro (Supabase):', err);
     }
 }
 
@@ -1265,7 +1235,29 @@ function renderCalendar() {
 async function abrirModalEficiencia(dataKey, dia) {
     const calendarData = getCalendarData();
 
-    const currentEff = calendarData[dataKey];
+    // Busca também via Supabase (fonte de verdade)
+    // - tarefas (para obter UUIDs)
+    // - registros do dia (status por tarefa_id)
+
+    if (!window.userId) return;
+
+    let registrosDoDiaById = {};
+    try {
+        const { data: registrosDoDia, error: registrosErr } = await window.supabaseClient
+            .from('registros')
+            .select('tarefa_id, status')
+            .eq('user_id', window.userId)
+            .eq('data', dataKey);
+
+        if (registrosErr) throw registrosErr;
+
+        (registrosDoDia || []).forEach(r => {
+            if (r?.tarefa_id) registrosDoDiaById[r.tarefa_id] = r.status;
+        });
+    } catch (e) {
+        console.error('Erro ao buscar registros do dia (Supabase):', e);
+    }
+
 
     // Modal existente reutilizar
     let modal = document.getElementById('modal-eficiencia');
@@ -1294,33 +1286,46 @@ modal.querySelector('#btn-cancelar-dia').addEventListener('click', () => modal.c
         modal.addEventListener('click', (e) => e.target === modal && modal.classList.remove('active'));
         
 // Limpar - remove a eficiência do dia E as tarefas individuais
-        modal.querySelector('#btn-limpar-dia').addEventListener('click', () => {
+        modal.querySelector('#btn-limpar-dia').addEventListener('click', async () => {
             const currentDataKey = modal.dataset.currentDataKey;
 
-            
+            try {
+                // 0) Remove registros do dia em Supabase (fonte de verdade)
+                if (currentDataKey && window.userId) {
+                    const { error: delErr } = await window.supabaseClient
+                        .from('registros')
+                        .delete()
+                        .eq('user_id', window.userId)
+                        .eq('data', currentDataKey);
+                    if (delErr) throw delErr;
+                }
+            } catch (e) {
+                console.error('Erro ao limpar registros (Supabase):', e);
+            }
+
             // 1. Remove eficiência do dia em calendario_dias
             const data = getCalendarData();
-// CORREÇÃO: Verificar explicitamente !== undefined para lidar com eficiência 0%
+            // CORREÇÃO: Verificar explicitamente !== undefined para lidar com eficiência 0%
             if (currentDataKey && data[currentDataKey] !== undefined) {
                 delete data[currentDataKey];
                 saveCalendarData(data);
             }
-            
-// 2. Remove daily tasks deste dia
+
+            // 2. Remove daily tasks deste dia
             const tarefasDia = JSON.parse(localStorage.getItem(CALENDAR_TAREFAS) || '{}');
             if (tarefasDia[currentDataKey]) {
                 delete tarefasDia[currentDataKey];
                 localStorage.setItem(CALENDAR_TAREFAS, JSON.stringify(tarefasDia));
             }
-            
+
             // 3. Remove cyclic tasks deste dia
             const tarefasCiclicas = JSON.parse(localStorage.getItem(CICLICAS_STORAGE) || '{}');
             if (tarefasCiclicas[currentDataKey]) {
                 delete tarefasCiclicas[currentDataKey];
                 localStorage.setItem(CICLICAS_STORAGE, JSON.stringify(tarefasCiclicas));
             }
-            
-            // 3. Atualiza os gráficos após a limpeza
+
+            // Atualiza UI
             modal.classList.remove('active');
             renderCalendar();
             renderEstatisticas(); // Atualiza gráficos automaticamente (inclui individual charts)
@@ -1331,6 +1336,10 @@ modal.querySelector('#btn-cancelar-dia').addEventListener('click', () => modal.c
             const currentDataKey = modal.dataset.currentDataKey;
             const tarefasContainer = modal.querySelector('.tarefas-lista');
             const tarefas = tarefasContainer.querySelectorAll('.tarefa-item');
+
+            // remove handlers duplicados caso o modal tenha sido recriado
+            // (mantém o comportamento sem afetar a lógica do checklist)
+
             let total = 0;
             let conclusas = 0;
             
@@ -1407,9 +1416,10 @@ modal.querySelector('#btn-cancelar-dia').addEventListener('click', () => modal.c
     } catch (e) {}
 
     // 2) Carrega metas diárias cadastradas (tarefas tipo=diaria) para compor a lista do modal
-    const { data: tarefasSupabase, error: metasErr } = await window.supabaseClient
+            const { data: tarefasSupabase, error: metasErr } = await window.supabaseClient
+
         .from('tarefas')
-        .select('id, titulo, tipo, prioridade, concluida')
+                .select('id, titulo, tipo, prioridade')
         .eq('user_id', window.userId)
         .in('tipo', ['diaria']);
 
@@ -1426,7 +1436,7 @@ modal.querySelector('#btn-cancelar-dia').addEventListener('click', () => modal.c
 
     const { data: tarefasModal, error: tarefasModalErr } = await window.supabaseClient
         .from('tarefas')
-        .select('id, titulo, tipo, prioridade, concluida, criada_em')
+.select('id, titulo, tipo, prioridade, criada_em')
         .eq('user_id', window.userId);
 
     if (tarefasModalErr) throw tarefasModalErr;
@@ -1466,7 +1476,10 @@ modal.querySelector('#btn-cancelar-dia').addEventListener('click', () => modal.c
             tarefaEl.className = 'tarefa-item';
             
             const taskId = `${meta.texto}-${meta.prioridade}`;
-            const concluidaDia = tarefasDiaSalvo[taskId];
+            // status por UUID vinda de `registros`
+            const tarefaId = meta.id;
+            const concluidaDia = registrosDoDiaById[tarefaId];
+
             
             if (concluidaDia === true) conclusas++;
             
@@ -1481,7 +1494,9 @@ modal.querySelector('#btn-cancelar-dia').addEventListener('click', () => modal.c
             
             tarefaEl.dataset.concluida = concluidaDia === true ? 'true' : concluidaDia === false ? 'false' : 'neutral';
             tarefaEl.dataset.taskId = taskId;
+            tarefaEl.dataset.tarefaId = tarefaId;
             tarefaEl.dataset.isCyclic = 'false';
+
             
             // Event listeners para daily (delegated)
             tarefaEl.querySelector('.btn-v').addEventListener('click', handleTaskToggle);
@@ -1550,14 +1565,21 @@ modal.querySelector('#btn-cancelar-dia').addEventListener('click', () => modal.c
                 const tarefaEl = document.createElement('div');
                 tarefaEl.className = 'tarefa-item cyclic-task';
                 tarefaEl.dataset.metaTipo = meta.tipo;
-                
+
                 const cyclicTaskId = meta.cyclicTaskId;
-                const concluidaDia = tarefasCiclicasSalvas[cyclicTaskId];
-                
+                const tarefaIdUuid = meta.id; // UUID de `tarefas`
+
+                // Estado do dia vem de `registros` (via registrosDoDiaById)
+                const concluidaDiaRegistro = tarefaIdUuid ? registrosDoDiaById[tarefaIdUuid] : undefined;
+
+                // fallback caso algum fluxo antigo ainda preencha localStorage (não é fonte de verdade)
+                const concluidaDiaLegacy = tarefasCiclicasSalvas[cyclicTaskId];
+                const concluidaDia = concluidaDiaRegistro !== undefined ? concluidaDiaRegistro : concluidaDiaLegacy;
+
                 if (concluidaDia === true) conclusas++;
 
                 const seloHtml = getSeloCicloMensalAnual(meta, dataKey, concluidaDia);
-                
+
                 tarefaEl.innerHTML = `
                     <span class="tarefa-texto">${meta.titulo ?? meta.texto} <small style="opacity: 0.7; color: var(--primary-blue-30)">(${meta.tipo})</small>${seloHtml}</span>
 
@@ -1566,20 +1588,22 @@ modal.querySelector('#btn-cancelar-dia').addEventListener('click', () => modal.c
                         <button class="btn-x ${concluidaDia === false ? 'active' : ''}" data-is-cyclic="true" data-task-id="${cyclicTaskId}">✗</button>
                     </div>
                 `;
-            
+
                 tarefaEl.dataset.concluida = concluidaDia === true ? 'true' : concluidaDia === false ? 'false' : 'neutral';
                 tarefaEl.dataset.taskId = cyclicTaskId;
+                tarefaEl.dataset.tarefaId = tarefaIdUuid; // garante persistência em `registros`
                 tarefaEl.dataset.isCyclic = 'true';
-            
+
                 // Event listeners para cyclic (delegated)
                 tarefaEl.querySelector('.btn-v').addEventListener('click', handleTaskToggle);
                 tarefaEl.querySelector('.btn-x').addEventListener('click', handleTaskToggle);
-            
+
                 tarefasContainer.appendChild(tarefaEl);
             });
         
         // ✅ UNIFICAR: Handler global para todos os toggles (já delegados)
-        function handleTaskToggle(e) {
+        async function handleTaskToggle(e) {
+
             const btn = e.target;
             const tarefaEl = btn.closest('.tarefa-item');
             const isCheck = btn.classList.contains('btn-v');
@@ -1591,22 +1615,25 @@ modal.querySelector('#btn-cancelar-dia').addEventListener('click', () => modal.c
             
             atualizarEficienciaModal(modal);
             
-            // Salvar baseado no tipo - SEMPRE salva em calendario_tarefas_dia[taskId normal] para gráficos
             const dataKeyLocal = modal.dataset.currentDataKey;
-            const taskIdLocal = tarefaEl.dataset.taskId;
+            const tarefaId = tarefaEl.dataset.tarefaId;
             const isCyclicLocal = tarefaEl.dataset.isCyclic === 'true';
             const metaTipoLocal = tarefaEl.dataset.metaTipo || '';
-            
-            // SALVAR SEMPRE EM CALENDAR_TAREFAS para compatibilidade com gráficos individuais
-            salvarEstadoTarefaDia(dataKeyLocal, taskIdLocal, isCheck);
+
+            // Novo modelo: salva na tabela `registros` (histórico diário)
+            // UNIQUE(tarefa_id, data, user_id)
+            await salvarEstadoRegistroDia(dataKeyLocal, tarefaId, isCheck);
+
+
+            // Atualiza imediatamente a pontuação/graphs quando o usuário marca/desmarca no modal
+            renderPontuacao();
             
             if (isCyclicLocal) {
-                // ADICIONAL: Salvar também em cyclic se necessário (sem hall da fama aqui)
-                const todasCiclicas = renderizarMetasCiclicas(dataKeyLocal);
-                const meta = todasCiclicas.find(m => m.cyclicTaskId === taskIdLocal);
-                if (meta) {
-                    salvarEstadoTarefaCyclicDia(dataKeyLocal, taskIdLocal, isCheck, meta);
-                }
+                // Cíclicas agora são baseadas em UUID (tarefaEl.dataset.tarefaId)
+                // O storage cíclico local ainda existe no código legado, mas não é fonte de verdade.
+                // A fonte de verdade para persistência no dia já é feita via salvarEstadoRegistroDia.
+                // Mantemos apenas a lógica de "pending" para anual.
+            
                 
                 // Coleta anual pendente para confirmar depois (track state)
                 if (metaTipoLocal === 'anual') {
@@ -1614,9 +1641,11 @@ modal.querySelector('#btn-cancelar-dia').addEventListener('click', () => modal.c
                     if (typeof window.pendingAnnualStates === 'undefined') {
                         window.pendingAnnualStates = {};
                     }
-                    window.pendingAnnualStates[taskIdLocal] = isCheck;
+                    // Usa UUID da tarefa (meta.id) para anual
+                    window.pendingAnnualStates[tarefaId] = isCheck;
                     
                     if (isCheck) {
+
                         // Animação e toast apenas quando marcado como feito
                         if (window.confetti) {
                             confetti({
@@ -2728,14 +2757,17 @@ function ensureSupabaseReady(){
             }
 
             window.userId = session.user.id;
-            await window.supabaseClient.from('perfil_usuario').insert([{
-                user_id: window.userId,
-                pontos: 0,
-                rank: 'Amador',
-                dias_ativos: 0,
-                streak: 0,
-                eficiencia: 0
-            }]);
+            await window.supabaseClient
+                .from('perfil_usuario')
+                .insert([
+                    {
+                        rank: 'Iniciante',
+                        pontos: 0,
+                        dias_ativos: 0,
+                        streak: 0,
+                        user_id: window.userId
+                    }
+                ]);
 
             ocultarTelaLogin();
             await iniciarApp();
