@@ -1913,7 +1913,8 @@ async function atualizarEstatisticas() {
         return streak;
     }
 
-function renderEstatisticas() {
+async function renderEstatisticas() {
+        console.log('Renderizando gráficos');
         try {
             // Exibir apenas desempenho de metas diárias e semanais
             // (mensais não entram nos gráficos/estatísticas)
@@ -1932,7 +1933,11 @@ function renderEstatisticas() {
                 chartInstance = null;
             }
 
-            const dados = atualizarEstatisticas();
+            const dados = await atualizarEstatisticas();
+            console.log("Dados para Desempenho por Meta:", dados);
+            console.log('[renderEstatisticas] Dados recebidos:', dados);
+            console.log('[renderEstatisticas] Chart.js disponível:', typeof Chart);
+            console.log('[renderEstatisticas] Canvas:', document.getElementById('eficiencia-chart'));
 
             const temDados = Array.isArray(dados?.labels) && dados.labels.length > 0 &&
                 Array.isArray(dados?.datasets) && dados.datasets.length > 0;
@@ -1994,50 +1999,97 @@ function renderEstatisticas() {
     // ===== GRÁFICOS POR META =====
     const individualCharts = {};
     
-function renderIndividualCharts() {
+async function renderIndividualCharts() {
         const container = document.getElementById('individual-charts-list');
         if (!container) return;
-        
+
         container.innerHTML = '';
-        
-            // Get all unique goals from daily + semanal (mensal removido do monitoramento estatístico)
-            const allGoals = new Map();
-            ['diario', 'semanal'].forEach(key => {
-            const metas = JSON.parse(localStorage.getItem(STORAGE_KEYS[key]) || '[]');
-            metas.forEach(meta => {
-                const id = `${meta.texto}-${meta.prioridade}`;
-                if (!allGoals.has(id)) {
-                    allGoals.set(id, { ...meta, view: key });
-                }
-            });
+
+        // ========= NOVO: carregar dados via JOIN =========
+        let dados = [];
+        try {
+            if (!window.userId) {
+                container.innerHTML = '<p class="no-data-message">Faça login para ver o desempenho.</p>';
+                return;
+            }
+
+            const { data, error } = await window.supabaseClient
+                .from('registros')
+                .select('*, tarefas(titulo, tipo, prioridade)')
+                .eq('user_id', window.userId);
+
+            if (error) throw error;
+            dados = data || [];
+        } catch (e) {
+            console.error('Erro ao buscar dados (join) para Desempenho por Meta:', e);
+        }
+
+        console.log("Dados para Desempenho por Meta:", dados);
+
+        // ========= Continuação: renderizar cards usando os dados do JOIN =========
+        // Agrupa por tarefa_id para renderizar 1 card por tarefa única
+        const tarefaMap = new Map();
+
+        dados.forEach(r => {
+            if (!r?.tarefa_id) return;
+            if (!tarefaMap.has(r.tarefa_id)) {
+                tarefaMap.set(r.tarefa_id, {
+                    tarefaId: r.tarefa_id,
+                    titulo: r.tarefas?.titulo,
+                    prioridade: r.tarefas?.prioridade,
+                    tipo: r.tarefas?.tipo,
+                    registros: []
+                });
+            }
+            tarefaMap.get(r.tarefa_id).registros.push(r);
         });
 
-        
-        if (allGoals.size === 0) {
+        if (tarefaMap.size === 0) {
             container.innerHTML = '<p class="no-data-message">Nenhuma meta cadastrada ainda.</p>';
             return;
         }
-        
 
-allGoals.forEach((meta, id) => {
-            const taskId = `${meta.texto}-${meta.prioridade}`;
+        // Cache para o verso do card (streak/eficiência), fonte de verdade: meta.registros (JOIN)
+        window.__tarefasSupabaseCacheById = {};
+        tarefaMap.forEach((tarefa, tarefaId) => {
+            window.__tarefasSupabaseCacheById[tarefaId] = tarefa;
+        });
+
+        tarefaMap.forEach((tarefa, tarefaId) => {
+            const taskId = tarefaId;
+
             const flipContainer = document.createElement('div');
             flipContainer.className = 'flip-card';
             flipContainer.dataset.taskId = taskId;
-            
+
             let dadosJanela;
-            if (meta.view === 'diario') {
-                dadosJanela = gerarJanela10Dias(taskId, meta);
+            // `tarefa.tipo` vem do join: 'diaria' / 'semanal' / 'mensal' / 'anual'
+            if (tarefa.tipo === 'diaria') {
+                dadosJanela = gerarJanela10Dias(taskId, tarefa);
             } else {
-                // Semanal e mensal usam ciclo real (4 pontos)
-                dadosJanela = gerarJanelaCicloReal(meta, 4);
+                // Semanal usa janela de ciclo real
+                dadosJanela = gerarJanelaCicloReal(tarefa, 4);
             }
-            const chartId = `chart-${id.replace(/[^a-zA-Z0-9]/g, '-')}`;
+            const chartId = `chart-${tarefaId.replace(/[^a-zA-Z0-9]/g, '-')}`;
             
+            const formatarPrioridade = (p) => ({
+                alta: 'Alta',
+                media: 'Média',
+                baixa: 'Baixa'
+            })[p] || p;
+
+            const formatarTipo = (t) => ({
+                diaria: 'Diária',
+                semanal: 'Semanal',
+                mensal: 'Mensal',
+                anual: 'Anual'
+            })[t] || t;
+
             flipContainer.innerHTML = `
                 <div class="flip-card-inner">
                     <div class="flip-card-front">
-                        <div class="chart-header">${meta.texto}<br><small>${meta.prioridade} - ${meta.view.charAt(0).toUpperCase() + meta.view.slice(1)}</small></div>
+                        <div class="chart-header">${tarefa.titulo}<br><small>${formatarPrioridade(tarefa.prioridade)} - ${formatarTipo(tarefa.tipo)}</small></div>
+
                         <canvas id="${chartId}" width="300" height="150"></canvas>
                     </div>
                     <div class="flip-card-back">
@@ -2060,8 +2112,8 @@ allGoals.forEach((meta, id) => {
                 const ctx = document.getElementById(chartId);
                 if (!ctx) return;
                 
-                if (individualCharts[id]) {
-                    individualCharts[id].destroy();
+                if (individualCharts[tarefaId]) {
+                    individualCharts[tarefaId].destroy();
                 }
 
                 
@@ -2093,7 +2145,7 @@ allGoals.forEach((meta, id) => {
                 // Preparar array de cores dos pontos
                 const pointColors = values.map((v, i) => getPointColor(v, temRegistro[i], explicitamenteNao[i]));
                 
-individualCharts[id] = new Chart(ctx, {
+individualCharts[tarefaId] = new Chart(ctx, {
                     type: 'line',
                     data: {
                         labels: labels,
@@ -2414,13 +2466,39 @@ function flipCardToggle(flipCardEl) {
     flipCardEl.classList.toggle('flipped');
     const backEl = flipCardEl.querySelector('.flip-card-back');
     if (!backEl) return;
-    
+
     backEl.innerHTML = ''; // Clean slate, no canvas leak
-    
+
     const taskId = flipCardEl.dataset.taskId;
-    const stats = calculateGoalStats(taskId);
-    
-    if (stats.noData) {
+
+    // Fonte de verdade: meta.registros (JOIN do Supabase)
+    // Ao virar, usamos os mesmos registros usados no gráfico.
+    const tarefaCache = window.__tarefasSupabaseCacheById || {};
+    const tarefa = tarefaCache[taskId];
+    const registros = tarefa?.registros || [];
+
+    console.log('[flipCardToggle] tarefaCache:', window.__tarefasSupabaseCacheById);
+    console.log('[flipCardToggle] taskId:', taskId);
+    console.log('[flipCardToggle] tarefa:', tarefa);
+    console.log('[flipCardToggle] registros:', registros);
+
+    const avaliados = registros.filter(r => r.status !== null && r.status !== undefined);
+    const concluidos = registros.filter(r => r.status === true);
+
+    const eficiencia = avaliados.length > 0
+        ? Math.round((concluidos.length / avaliados.length) * 100)
+        : 0;
+
+    // Streak — dias consecutivos (até hoje) com status true
+    let streak = 0;
+    const registrosOrdenados = [...registros].sort((a, b) => String(b.data).localeCompare(String(a.data)));
+    for (const r of registrosOrdenados) {
+        if (r.status === true) streak++;
+        else break;
+    }
+
+    // Validação visual (mantém estilo existente)
+    if (avaliados.length === 0) {
         backEl.innerHTML = `
             <div class="no-data">
                 Sem registros para análise<br>
@@ -2429,19 +2507,15 @@ function flipCardToggle(flipCardEl) {
         `;
         return;
     }
-    
+
     backEl.innerHTML = `
         <div class="stats-item">
+            <span class="stats-label">Streak</span>
+            <span class="stats-value">${streak} dias</span>
+        </div>
+        <div class="stats-item">
             <span class="stats-label">Eficiência</span>
-            <span class="stats-value">${stats.eficiencia}%</span>
-        </div>
-        <div class="stats-item">
-            <span class="stats-label">Maior Streak</span>
-            <span class="stats-value">${stats.maxStreak} dias</span>
-        </div>
-        <div class="stats-item">
-            <span class="stats-label">Total Sim</span>
-            <span class="stats-value">${stats.totalSim}</span>
+            <span class="stats-value">${eficiencia}%</span>
         </div>
     `;
 }
@@ -2454,28 +2528,30 @@ function flipCardToggle(flipCardEl) {
 function gerarJanela10Dias(taskId, meta) {
     const hoje = new Date();
     const janela = [];
-    
+
     for (let i = 9; i >= 0; i--) {
         const dia = new Date(hoje);
         dia.setDate(dia.getDate() - i);
         const dataKey = `${dia.getFullYear()}-${String(dia.getMonth() + 1).padStart(2, '0')}-${String(dia.getDate()).padStart(2, '0')}`;
-        
-        const status = getTaskStatus(dataKey, taskId, false, null);
-        
+
         const dataFormatada = dia.toLocaleDateString('pt-BR', {
             day: '2-digit',
             month: 'short'
         }).replace('.', '');
-        
+
+        // Busca registro do dia nos registros já retornados pelo JOIN
+        const registro = meta?.registros?.find(r => r.data === dataKey);
+        const temRegistro = registro !== undefined;
+
         janela.push({
             data: dataFormatada,
-            dataKey: dataKey,
-            valor: status.valor,
-            temRegistro: status.temRegistro,
-            explicitamenteNao: status.explicitamenteNao
+            dataKey,
+            valor: temRegistro ? (registro.status === true ? 1 : 0) : null,
+            temRegistro,
+            explicitamenteNao: registro?.status === false
         });
     }
-    
+
     return janela;
 }
 
