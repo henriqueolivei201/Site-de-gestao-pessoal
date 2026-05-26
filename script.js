@@ -1625,9 +1625,6 @@ modal.querySelector('#btn-cancelar-dia').addEventListener('click', () => modal.c
             await salvarEstadoRegistroDia(dataKeyLocal, tarefaId, isCheck);
 
 
-            // Atualiza imediatamente a pontuação/graphs quando o usuário marca/desmarca no modal
-            renderPontuacao();
-            
             if (isCyclicLocal) {
                 // Cíclicas agora são baseadas em UUID (tarefaEl.dataset.tarefaId)
                 // O storage cíclico local ainda existe no código legado, mas não é fonte de verdade.
@@ -1667,6 +1664,8 @@ modal.querySelector('#btn-cancelar-dia').addEventListener('click', () => modal.c
             // FORCE UPDATE GRÁFICOS - destroy + recreate garante dados frescos
             if (chartInstance) chartInstance.destroy();
             renderIndividualCharts();
+            // Pontuação/graphs na aba de pontuação devem atualizar apenas ao clicar em CONFIRMAR
+
         }
         
         // Calcular eficiência inicial baseada no total (daily + cyclic)
@@ -1792,7 +1791,7 @@ function setupCalendarNavigation() {
 }
 
 // ===== ESTATÍSTICAS =====
-function atualizarEstatisticas() {
+async function atualizarEstatisticas() {
         // Total de metas cadastradas (apenas goals: diario e semanal)
         let totalMetas = 0;
         const goalKeys = ['diario', 'semanal'];
@@ -1826,6 +1825,21 @@ function atualizarEstatisticas() {
         const statStreak = document.getElementById('stat-streak');
 
         if (statTotal) statTotal.textContent = totalMetas;
+
+        // Corrigir stat-total: fonte de verdade é o Supabase (tarefas da tabela `tarefas`)
+        try {
+            if (window.userId && statTotal) {
+                const { data: tarefas } = await window.supabaseClient
+                    .from('tarefas')
+                    .select('id')
+                    .eq('user_id', window.userId);
+
+                statTotal.textContent = tarefas?.length || 0;
+            }
+        } catch (e) {
+            // fallback: mantém totalMetas calculado por localStorage
+        }
+
         if (statEficiencia) statEficiencia.textContent = eficiencia + '%';
         if (statDias) statDias.textContent = diasAtivos.size;
         if (statStreak) statStreak.textContent = calcularStreak();
