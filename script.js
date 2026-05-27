@@ -317,12 +317,8 @@ async function salvarMeta(view, texto, prioridade) {
 
                 user_id: window.userId,
                 // usar null aqui para bater com o exemplo do console (e evitar rejeição por constraint)
-                concluida: null,
                 criada_em: new Date().toISOString()
             };
-
-
-            console.log('Dados do insert (payload):', JSON.stringify(payload, null, 2));
 
             await window.supabaseClient
                 .from('tarefas')
@@ -387,12 +383,6 @@ async function salvarMeta(view, texto, prioridade) {
             };
 
             const tipoUsado = tipoMap[view] || view;
-            console.log('Filtros (carregarMetas):', {
-                user_id: window.userId,
-                view,
-                tipoUsado
-            });
-
             const { data: metas, error } = await window.supabaseClient
                 .from('tarefas')
                 .select('id, titulo, tipo, prioridade, criada_em')
@@ -401,7 +391,7 @@ async function salvarMeta(view, texto, prioridade) {
 
 
 
-            console.log(`Tarefas retornadas (view=${view}):`, { metas, error });
+        
 
 
             if (error) throw error;
@@ -543,7 +533,8 @@ async function renderPontuacao() {
 
     // rankSupabase pode ser nome; garantir render com icon correto
     const rankObj = RANKS.find(r => r.nome === rankSupabase) || rankAtual;
-    pontuacaoRankDisplay.innerHTML = `${rankObj.icon} <strong>${rankObj.nome}</strong>`;
+    // FIX #2: Legenda (rank inferior) deve exibir rank atual e pontos atuais: "Iniciante (2 pts)"
+    pontuacaoRankDisplay.innerHTML = `${rankObj.icon} <strong>${rankObj.nome} (${Math.max(0, Math.round(pontosSupabase))} pts)</strong>`;
 
 
     // Garantir chart limpo
@@ -553,13 +544,78 @@ async function renderPontuacao() {
     }
 
     // Atualizar histórico e gráfico
-    const historico = gerarHistoricoPontuacao();
-    // Se não tiver dados, ainda assim mostra um chart vazio
-    const labels = historico.map(h => {
-        const d = new Date(h.dataKey + 'T00:00:00');
-        return d.toLocaleDateString('pt-BR', { day: '2-digit', month: 'short' });
-    });
-    const dataAcumulada = historico.map(h => h.acumulado);
+    let historico = await gerarHistoricoPontuacao();
+
+
+    // FIX #3: gráfico vazio -> garantir uma “linha” com pelo menos 2 pontos (início + atual)
+    if (!Array.isArray(historico) || historico.length === 0) {
+        const hoje = new Date();
+        const d0 = new Date(hoje);
+        d0.setDate(d0.getDate() - 1);
+        const pontosAtual = Math.max(0, Math.round(pontosSupabase ?? pontuacaoTotal));
+        historico = [
+            { dataKey: d0.toISOString().split('T')[0], pontosDia: 0, acumulado: pontosAtual },
+            { dataKey: hoje.toISOString().split('T')[0], pontosDia: 0, acumulado: pontosAtual }
+        ];
+    }
+
+    const dataAcumuladaRaw = historico.map(h => h.acumulado);
+    const dataKeysRaw = historico.map(h => h.dataKey);
+
+    // Suporte a histórico longo: agrupar X conforme quantidade de pontos.
+    const pontosCount = historico.length;
+    let labels = [];
+    let dataAcumulada = [];
+
+
+    if (pontosCount <= 30) {
+
+        // Até 30 dias: mostra cada dia
+        labels = dataKeysRaw.map(k => {
+            const d = new Date(k + 'T00:00:00');
+            return d.toLocaleDateString('pt-BR', { day: '2-digit', month: 'short' });
+        });
+        dataAcumulada = dataAcumuladaRaw;
+    } else if (pontosCount <= 180) {
+
+        // 30 a 180 dias: agrupa por semana (pega o acumulado do último dia da semana)
+        const stride = 7;
+        for (let i = 0; i < pontosCount; i += stride) {
+            const end = Math.min(i + stride - 1, pontosCount - 1);
+
+            const k = dataKeysRaw[end];
+            const d = new Date(k + 'T00:00:00');
+            labels.push(d.toLocaleDateString('pt-BR', { day: '2-digit', month: 'short' }));
+            dataAcumulada.push(dataAcumuladaRaw[end]);
+        }
+    } else {
+        // > 180 dias: agrupa por mês (pega o acumulado do último dia do mês)
+        const mapMes = new Map(); // key: YYYY-MM -> {label, idx}
+        for (let i = 0; i < pontosCount; i++) {
+
+            const k = dataKeysRaw[i];
+            const [y, m] = k.split('-');
+            const keyMes = `${y}-${m}`;
+            mapMes.set(keyMes, i); // sobrescreve => fica no último dia do mês
+        }
+
+        const keysOrdenadas = Array.from(mapMes.keys()).sort();
+        for (const keyMes of keysOrdenadas) {
+            const idx = mapMes.get(keyMes);
+            const k = dataKeysRaw[idx];
+            const d = new Date(k + 'T00:00:00');
+            labels.push(d.toLocaleDateString('pt-BR', { month: 'short', year: '2-digit' }));
+            dataAcumulada.push(dataAcumuladaRaw[idx]);
+        }
+    }
+
+
+    const maxPontos = Math.max(0, ...dataAcumulada.map(n => Number(n) || 0));
+    console.log('[pontuacao-chart] Labels:', labels);
+    console.log('[pontuacao-chart] Values:', dataAcumulada);
+    console.log('[pontuacao-chart] MaxPontos:', maxPontos);
+
+
 
     const ctx = canvasEl.getContext('2d');
     chartInstance = new Chart(ctx, {
@@ -575,20 +631,43 @@ async function renderPontuacao() {
                 fill: true,
                 pointBorderColor: '#fff',
                 pointBorderWidth: 2,
-                pointRadius: 6,
-                pointHoverRadius: 8
+                pointRadius: 0,
+                pointHoverRadius: 4
             }]
+
         },
         options: {
             responsive: true,
             maintainAspectRatio: false,
             scales: {
-                y: { beginAtZero: true },
+                y: {
+                    min: 0,
+                    beginAtZero: true,
+                    // FIX #1: escala do eixo Y deve refletir os valores reais de pontos
+                    // (evita ficar “preso” em 0..1)
+                    max: (() => {
+                        const maxPontosY = Math.max(0, ...dataAcumulada.map(n => Number(n) || 0));
+                        return Math.ceil(maxPontosY * 1.2); // 20% acima do máximo
+                    })(),
+                    ticks: {
+                        callback: (v) => `${v} pts`
+                    },
+                    grid: { color: 'rgba(0,0,0,0.08)' }
+                },
                 x: { grid: { display: false } }
             },
-            plugins: { legend: { display: false } }
+            plugins: { 
+                legend: { display: false },
+                tooltip: {
+                    callbacks: {
+                        title: (items) => items?.[0]?.label || '',
+                        label: (ctx) => ` ${ctx.parsed.y} pts`
+                    }
+                }
+            }
         }
     });
+
 
     // Hall da Fama: desbloqueios por rank (sem mexer em carregarHallFama)
     // Usa historico_pontuacao (pontuacao total atual) e RANKS.forEach
@@ -671,51 +750,80 @@ async function calcularPontuacaoTotal() {
 
 
 
-function gerarHistoricoPontuacao() {
-    const tarefasDia = JSON.parse(localStorage.getItem(CALENDAR_TAREFAS) || '{}');
-    const tarefasCiclicas = JSON.parse(localStorage.getItem(CICLICAS_STORAGE) || '{}');
-    const metasDiarias = JSON.parse(localStorage.getItem(STORAGE_KEYS.diario) || '[]');
-    const metasSemanais = JSON.parse(localStorage.getItem(STORAGE_KEYS.semanal) || '[]');
-    const metasMensais = JSON.parse(localStorage.getItem(STORAGE_KEYS.mensal) || '[]');
-    const metasAnuais = JSON.parse(localStorage.getItem(STORAGE_KEYS.anual) || '[]');
+async function gerarHistoricoPontuacao() {
+    const hoje = new Date();
 
-    const todasDatas = new Set([
-        ...Object.keys(tarefasDia),
-        ...Object.keys(tarefasCiclicas)
-    ]);
+    // 1) Definir dataInicio como a primeira data com qualquer registro
+    let dataInicio = hoje.toISOString().split('T')[0];
+    try {
+        const { data: primeiroRegistro } = await window.supabaseClient
+            .from('registros')
+            .select('data')
+            .eq('user_id', window.userId)
+            .order('data', { ascending: true })
+            .limit(1);
+
+        dataInicio = primeiroRegistro?.[0]?.data || dataInicio;
+    } catch (e) {
+        // fallback: hoje
+    }
+
+    // 2) Buscar registros do Supabase (fonte de verdade)
+    //    Calcularemos pontos por dia a partir do status true/false e do tipo da tarefa.
+    const pontosPorTipo = { diaria: 1, semanal: 7, mensal: 30, anual: 365 };
+
+    const { data: registros } = await window.supabaseClient
+        .from('registros')
+        .select('data, status, tarefas(tipo)')
+        .eq('user_id', window.userId)
+        .order('data', { ascending: true });
+
+    // Se não houver registros, retorna linha zerada (2 pontos, coerente com FIX #3)
+    if (!Array.isArray(registros) || registros.length === 0) {
+        return [];
+    }
+
+    // Agrupar registros por data (YYYY-MM-DD)
+    const registrosPorDia = registros.reduce((acc, r) => {
+        const dataKey = r?.data;
+        if (!dataKey) return acc;
+        acc[dataKey] = acc[dataKey] || [];
+        acc[dataKey].push(r);
+        return acc;
+    }, {});
 
     const historico = [];
     let acumulado = 0;
 
-    Array.from(todasDatas).sort().forEach(dataKey => {
-        let pontosDia = 0;
-        // FIX #3: multiplicador baseado no acumulado real até este ponto
+    const dataInicialObj = new Date(dataInicio + 'T00:00:00');
+    const dataHojeObj = new Date(hoje.toISOString().split('T')[0] + 'T00:00:00');
+
+    for (let cursor = new Date(dataInicialObj); cursor <= dataHojeObj; cursor.setDate(cursor.getDate() + 1)) {
+        const dataKey = cursor.toISOString().split('T')[0];
+
+        // multiplicador baseado no acumulado real até este ponto
         const mult = getRankAtual(Math.max(0, acumulado)).punicao;
-        const diaD = tarefasDia[dataKey] || {};
-        const diaC = tarefasCiclicas[dataKey] || {};
 
-        metasDiarias.forEach(meta => {
-            const id = `${meta.texto}-${meta.prioridade}`;
-            if (diaD[id] === true) pontosDia += PONTOS_POR_TIPO.diario;
-            else if (diaD[id] === false) pontosDia -= PONTOS_POR_TIPO.diario * mult;
-        });
+        const registrosDia = registrosPorDia[dataKey] || [];
+        let pontosDia = 0;
 
-        // FIX #2: usar cyclicTaskId para semanais, mensais e anuais
-        [...metasSemanais, ...metasMensais, ...metasAnuais].forEach(meta => {
-            const tipo = metasSemanais.includes(meta) ? 'semanal'
-                       : metasMensais.includes(meta)  ? 'mensal'
-                       : 'anual';
-            const id = getCyclicTaskId(meta);
-            if (diaC[id] === true) pontosDia += PONTOS_POR_TIPO[tipo];
-            else if (diaC[id] === false) pontosDia -= PONTOS_POR_TIPO[tipo] * mult;
+        registrosDia.forEach(r => {
+            const tipo = r?.tarefas?.tipo;
+            if (!tipo || !(pontosPorTipo[tipo] !== undefined)) return;
+
+            const basePontos = pontosPorTipo[tipo];
+            if (r.status === true) pontosDia += basePontos;
+            if (r.status === false) pontosDia -= basePontos * mult;
         });
 
         acumulado += pontosDia;
         historico.push({ dataKey, pontosDia, acumulado });
-    });
+    }
 
     return historico;
 }
+
+
 
 function getCalendarData() {
 return JSON.parse(localStorage.getItem(CALENDAR_STORAGE) || '{}');
@@ -832,23 +940,6 @@ function isDiaCicloMensal(meta, dataKey) {
         });
     }
 
-    // DEBUG adicional (mantido)
-    console.log('[DEBUG isDiaCicloMensal]', {
-        meta: {
-            texto: meta?.texto,
-            titulo: meta?.titulo,
-            prioridade: meta?.prioridade,
-            tipo: meta?.tipo,
-            criada_em: meta?.criada_em,
-            dataCriacao: meta?.dataCriacao,
-            origemIso
-        },
-        dataKey,
-        diaDoMesCriacao,
-        diaDoMesDataKey,
-        resultado
-    });
-
     return resultado;
 }
 
@@ -901,19 +992,6 @@ function renderizarMetasCiclicas(dataKey, tarefasSupabase = []) {
     const metasMensais = tarefasSupabase.length ? (tarefasSupabase || []).filter(t => t.tipo === 'mensal') : JSON.parse(localStorage.getItem(STORAGE_KEYS.mensal) || '[]');
     const metasSemanais = tarefasSupabase.length ? (tarefasSupabase || []).filter(t => t.tipo === 'semanal') : JSON.parse(localStorage.getItem(STORAGE_KEYS.semanal) || '[]');
     const metasAnuais = tarefasSupabase.length ? (tarefasSupabase || []).filter(t => t.tipo === 'anual') : JSON.parse(localStorage.getItem(STORAGE_KEYS.anual) || '[]');
-
-
-    console.log('[DEBUG renderizarMetasCiclicas] dataKey (modal)', dataKey);
-    console.log('[DEBUG renderizarMetasCiclicas] semanais carregadas', metasSemanais.length);
-
-
-    console.log('[DEBUG renderizarMetasCiclicas] carregadas', {
-        dataKey,
-        mensais: metasMensais.length,
-        semanais: metasSemanais.length,
-        anuais: metasAnuais.length
-    });
-
     metasMensais.forEach(meta => {
         const ehDia = isDiaCicloMensal(meta, dataKey);
         console.log('[DEBUG renderizarMetasCiclicas] mensal', {
@@ -1441,7 +1519,7 @@ modal.querySelector('#btn-cancelar-dia').addEventListener('click', () => modal.c
 
     if (tarefasModalErr) throw tarefasModalErr;
 
-    console.log('Tarefas passadas para renderizarMetasCiclicas:', tarefasModal);
+    
 
     const metasCiclicas = renderizarMetasCiclicas(dataKey, tarefasModal || []);
 
@@ -1792,15 +1870,24 @@ function setupCalendarNavigation() {
 
 // ===== ESTATÍSTICAS =====
 async function atualizarEstatisticas() {
-        // Total de metas cadastradas (apenas goals: diario e semanal)
+        // Total de metas cadastradas (fonte de verdade: Supabase `tarefas`)
         let totalMetas = 0;
-        const goalKeys = ['diario', 'semanal'];
 
-        goalKeys.forEach(key => {
-            const raw = JSON.parse(localStorage.getItem(STORAGE_KEYS[key]) || '[]');
-            const metas = Array.isArray(raw) ? raw : [];
-            totalMetas += metas.length;
-        });
+        // Busca o total real no Supabase (evita ficar 0 por localStorage)
+        try {
+            if (window.userId) {
+                const { data: tarefasTotal, error: tarefasTotalErr } = await window.supabaseClient
+                    .from('tarefas')
+                    .select('id')
+                    .eq('user_id', window.userId);
+
+                if (!tarefasTotalErr) {
+                    totalMetas = tarefasTotal?.length || 0;
+                }
+            }
+        } catch (e) {
+            totalMetas = 0;
+        }
 
         // Calcular estatísticas a partir do CALENDÁRIO
         const calendarData = getCalendarData();
@@ -1914,7 +2001,7 @@ async function atualizarEstatisticas() {
     }
 
 async function renderEstatisticas() {
-        console.log('Renderizando gráficos');
+       
         try {
             // Exibir apenas desempenho de metas diárias e semanais
             // (mensais não entram nos gráficos/estatísticas)
@@ -1934,10 +2021,7 @@ async function renderEstatisticas() {
             }
 
             const dados = await atualizarEstatisticas();
-            console.log("Dados para Desempenho por Meta:", dados);
-            console.log('[renderEstatisticas] Dados recebidos:', dados);
-            console.log('[renderEstatisticas] Chart.js disponível:', typeof Chart);
-            console.log('[renderEstatisticas] Canvas:', document.getElementById('eficiencia-chart'));
+
 
             const temDados = Array.isArray(dados?.labels) && dados.labels.length > 0 &&
                 Array.isArray(dados?.datasets) && dados.datasets.length > 0;
@@ -2015,7 +2099,7 @@ async function renderIndividualCharts() {
 
             const { data, error } = await window.supabaseClient
                 .from('registros')
-                .select('*, tarefas(titulo, tipo, prioridade)')
+.select('*, tarefas(titulo, tipo, prioridade, criada_em)')
                 .eq('user_id', window.userId);
 
             if (error) throw error;
@@ -2024,7 +2108,7 @@ async function renderIndividualCharts() {
             console.error('Erro ao buscar dados (join) para Desempenho por Meta:', e);
         }
 
-        console.log("Dados para Desempenho por Meta:", dados);
+    
 
         // ========= Continuação: renderizar cards usando os dados do JOIN =========
         // Agrupa por tarefa_id para renderizar 1 card por tarefa única
@@ -2038,6 +2122,7 @@ async function renderIndividualCharts() {
                     titulo: r.tarefas?.titulo,
                     prioridade: r.tarefas?.prioridade,
                     tipo: r.tarefas?.tipo,
+                    criada_em: r.tarefas?.criada_em,
                     registros: []
                 });
             }
@@ -2476,12 +2561,6 @@ function flipCardToggle(flipCardEl) {
     const tarefaCache = window.__tarefasSupabaseCacheById || {};
     const tarefa = tarefaCache[taskId];
     const registros = tarefa?.registros || [];
-
-    console.log('[flipCardToggle] tarefaCache:', window.__tarefasSupabaseCacheById);
-    console.log('[flipCardToggle] taskId:', taskId);
-    console.log('[flipCardToggle] tarefa:', tarefa);
-    console.log('[flipCardToggle] registros:', registros);
-
     const avaliados = registros.filter(r => r.status !== null && r.status !== undefined);
     const concluidos = registros.filter(r => r.status === true);
 
@@ -2563,51 +2642,65 @@ function gerarJanela10Dias(taskId, meta) {
  * @returns Array de 4 datas cíclicas + status
  */
 function gerarJanelaCicloReal(meta, numCiclos = 4) {
-    const dataCriacao = new Date(meta.dataCriacao);
-    const hoje = new Date();
+    // A fonte de verdade para o cálculo vem do JOIN do Supabase.
+    // O join já entrega `criada_em` e `prioridade` no objeto `meta`.
+    const criadaEm = meta.criada_em;
+    const dataCriacao = new Date(criadaEm);
     const janela = [];
 
-    // Determinar intervalo baseado no tipo real (meta.tipo é mensal/semanal; meta.view pode não existir)
-    const tipo = meta.tipo || meta.view || '';
-    let intervaloDias = 0;
+    const tipo = meta.tipo || '';
+    // Gerar pontos do ciclo a partir de criada_em (meta), voltando numCiclos períodos
+    // Força timezone UTC para evitar Invalid Date quando a string não vem com 'Z'.
+    const criadaEmStr = meta.criada_em?.endsWith('Z')
+      ? meta.criada_em
+      : meta.criada_em + 'Z';
+    const dataBase = new Date(criadaEmStr);
 
-    // Robustez: garantir prioridade quando meta.prioridade vier vazia
-    let prioridade = meta.prioridade;
-    if (!prioridade) {
-        try {
-            const metasSemanais = JSON.parse(localStorage.getItem(STORAGE_KEYS.semanal) || '[]');
-            const metasMensais = JSON.parse(localStorage.getItem(STORAGE_KEYS.mensal) || '[]');
-            // Procura por texto; (no app texto costuma ser único dentro do view)
-            const achada = metasSemanais.find(m => m.texto === meta.texto) || metasMensais.find(m => m.texto === meta.texto);
-            if (achada?.prioridade) prioridade = achada.prioridade;
-        } catch (e) {
-            // ignore
+    if (tipo === 'mensal') {
+        // Para mensal deve respeitar o MESMO DIA do mês (ex: 31/01 -> 31/12 e 30/11)
+        // Usar setMonth ao invés de setDate para evitar “30 dias fixos”.
+        for (let i = numCiclos - 1; i >= 0; i--) {
+            const dataCiclo = new Date(dataBase);
+            dataCiclo.setMonth(dataCiclo.getMonth() - i);
+
+            const dataKey = `${dataCiclo.getFullYear()}-${String(dataCiclo.getMonth() + 1).padStart(2, '0')}-${String(dataCiclo.getDate()).padStart(2, '0')}`;
+
+            const registro = meta?.registros?.find(r => r.data === dataKey);
+            const temRegistro = registro !== undefined;
+
+            const dataFormatada = dataCiclo.toLocaleDateString('pt-BR', {
+                day: '2-digit',
+                month: 'short'
+            }).replace('.', '');
+
+            janela.push({
+                data: dataFormatada,
+                dataKey,
+                valor: temRegistro ? (registro.status === true ? 1 : 0) : null,
+                temRegistro,
+                explicitamenteNao: registro?.status === false
+            });
         }
+        return janela;
     }
 
-    const taskId = `${meta.texto}-${prioridade}`;
-
-
+    let intervaloDias = 0;
     switch (tipo) {
         case 'semanal':
             intervaloDias = 7;
-            break;
-        case 'mensal':
-            intervaloDias = 30;
             break;
         default:
             return [];
     }
 
-    // Gerar pontos do passado baseado na dataCriacao (como já era)
     for (let i = numCiclos - 1; i >= 0; i--) {
-        const dataCiclo = new Date(dataCriacao);
+        const dataCiclo = new Date(dataBase);
         dataCiclo.setDate(dataCiclo.getDate() - (i * intervaloDias));
 
         const dataKey = `${dataCiclo.getFullYear()}-${String(dataCiclo.getMonth() + 1).padStart(2, '0')}-${String(dataCiclo.getDate()).padStart(2, '0')}`;
 
-        // Força isWeekly=true para cair no fallback e buscar em ciclicas_tarefas_dia
-        const status = getTaskStatus(dataKey, taskId, true, meta);
+        const registro = meta?.registros?.find(r => r.data === dataKey);
+        const temRegistro = registro !== undefined;
 
         const dataFormatada = dataCiclo.toLocaleDateString('pt-BR', {
             day: '2-digit',
@@ -2616,10 +2709,10 @@ function gerarJanelaCicloReal(meta, numCiclos = 4) {
 
         janela.push({
             data: dataFormatada,
-            dataKey: dataKey,
-            valor: status.valor,
-            temRegistro: status.temRegistro,
-            explicitamenteNao: status.explicitamenteNao
+            dataKey,
+            valor: temRegistro ? (registro.status === true ? 1 : 0) : null,
+            temRegistro,
+            explicitamenteNao: registro?.status === false
         });
     }
 

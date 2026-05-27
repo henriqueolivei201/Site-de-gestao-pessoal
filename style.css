@@ -1628,12 +1628,14 @@ canvas {
 }
 
 /* Pontuação */
-css.chart-wrapper-pontuacao {
+.chart-wrapper-pontuacao {
     position: relative;
     height: 300px;
+    min-height: 200px; /* FIX #4: gráfico menos achatado */
     width: 100%;
     margin-bottom: 2rem;
 }
+
 
 #pontuacao-total-display {
     font-size: 2.5rem;
