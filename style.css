@@ -1267,20 +1267,57 @@ canvas {
 
 
 @media (max-width: 480px) {
-    .modal {
-        padding: 2rem 1.5rem;
-        margin: 1rem;
-    }
-    
-    .prioridade-buttons {
-        flex-direction: column;
-        gap: 0.75rem;
+
+    /* 1. Sidebar mais larga para caber os labels */
+    .sidebar {
+        width: 100px !important;
+        position: fixed !important;
+        height: 100vh !important;
+        padding: 1rem 0.5rem !important;
     }
 
-    .flip-card {
-        height: 220px !important;
+    /* 2. Labels da sidebar menores */
+    .nav-item {
+        font-size: 11px !important;
+        padding: 0.6rem 0.4rem !important;
+        white-space: nowrap !important;
+        overflow: hidden !important;
+        text-overflow: ellipsis !important;
+        justify-content: flex-start !important;
+    }
+
+    /* 3. Título "Visualização" na sidebar */
+    .sidebar h2 {
+        font-size: 1.2rem !important;
+        white-space: nowrap !important;
+        overflow: hidden !important;
+        text-overflow: ellipsis !important;
+    }
+
+    /* 4. Conteúdo principal compensar sidebar */
+    .main-content {
+        margin-left: 100px !important;
+        padding-right: 12px !important;
+        padding-left: 12px !important;
+        overflow-x: hidden !important;
+        width: calc(100% - 100px) !important;
+        box-sizing: border-box !important;
+    }
+
+    /* 5. Stats-bar alinhada com sidebar */
+    .stats-bar {
+        left: 100px !important;
+        padding: 0.5rem 0.75rem !important;
+    }
+
+    /* 6. Títulos de seção não cortarem */
+    .goals-section h2 {
+        font-size: 1.4rem !important;
+        word-break: break-word !important;
     }
 }
+
+
 
 
 .btn-excluir {
@@ -1624,18 +1661,215 @@ canvas {
 @media (max-width: 480px) {
     .main-header { padding: 1.25rem; }
     .goal-item { padding: 1.25rem; }
-#data-atual { font-size: 1.5rem; }
+    #data-atual { font-size: 1.5rem; }
+
+    /* Logo/Título no header */
+    .main-header .header-left {
+        overflow: visible;
+    }
+
+    /* Header (stats): evitar sobreposição */
+    .stats-bar {
+        gap: 6px;
+        align-items: flex-start;
+    }
+
+    .stat-value {
+        font-size: 11px;
+    }
+
+    .stat-label {
+        font-size: 8px;
+        line-height: 1.1;
+    }
+
+    /* Botão "Sair" não empurrar */
+    .stats-bar #btn-logout {
+        flex: 0 0 auto;
+        margin-left: 0;
+    }
+
+    /* Sidebar: estreita e truncar labels */
+    .sidebar {
+        width: 72px;
+    }
+
+    .nav-item {
+        width: 100%;
+        padding-left: 0.75rem;
+        padding-right: 0.75rem;
+        font-size: 11px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+
+    /* Conteúdo: compensar sidebar e evitar corte */
+    .main-content {
+        margin-left: 72px;
+        padding-right: 8px;
+        overflow: hidden;
+    }
+
+    /* Card/data ocupar largura total */
+    .main-content > * {
+        width: 100%;
+        box-sizing: border-box;
+    }
+
+    .stats-bar {
+        left: 95px !important;
+        right: 0 !important;
+        padding: 0.5rem 0.5rem 0.5rem 0.75rem !important;
+        display: flex !important;
+        align-items: center !important;
+        justify-content: space-between !important;
+        overflow: visible !important;
+    }
+    .sidebar h2 {
+        font-size: 0.54rem !important;
+        white-space: nowrap !important;
+        overflow: hidden !important;
+        text-overflow: ellipsis !important;
+        max-width: 90px !important;
+    }
+    .btn-logout {
+        width: auto !important;
+        position: relative !important;
+        margin-top: 0 !important;
+        flex-shrink: 0 !important;
+        font-size: 0.7rem !important;
+        padding: 0.4rem 0.6rem !important;
+        white-space: nowrap !important;
+    }
+    stat-item {
+        flex-shrink: 1 !important;
+        min-width: 0 !important;
+    }
+
+    .calendar-section {
+        padding: 0 !important;
+    }
+
+    /* Grid mais compacto */
+    .calendar-grid,
+    .calendar-weekdays {
+        gap: 2px !important;
+    }
+
+    .calendar-weekdays span,
+    .calendar-weekdays div {
+        font-size: 0.6rem !important;
+    }
+
+    .calendar-day {
+        min-height: 32px !important;
+        font-size: 0.7rem !important;
+    }
+
+    /* Botões de navegação menores */
+    .calendar-navigation button {
+        width: 28px !important;
+        height: 28px !important;
+        font-size: 0.85rem !important;
+    }
+
+    /* Título do mês menor */
+    .calendar-navigation h3 {
+        font-size: 1rem !important;
+        min-width: 110px !important;
+    }
+    /* Botões do modal em coluna para não cortar */
+    .modal-actions {
+        flex-direction: column !important;
+        gap: 0.6rem !important;
+    }
+
+    .btn-cancelar,
+    .btn-confirmar,
+    .btn-limpar {
+        width: 100% !important;
+        text-align: center !important;
+        padding: 0.85rem !important;
+        font-size: 0.95rem !important;
+    }
+
+    .flip-card {
+        height: 200px !important;
+        width: 100% !important;
+        box-sizing: border-box !important;
+    }
+
+    .flip-card-front,
+    .flip-card-back {
+        padding: 0.75rem !important;
+    }
+
+    /* Canvas do chart.js respeitar largura */
+    .flip-card canvas {
+        max-width: 100% !important;
+        width: 100% !important;
+    }
+
+    /* Grid de cards em coluna única */
+    #individual-charts-list {
+        grid-template-columns: 1fr !important;
+        gap: 12px !important;
+        padding: 0 !important;
+    }
+
+    /* Container geral sem overflow */
+    .individual-charts-container {
+        overflow-x: hidden !important;
+        padding: 0 !important;
+    }
+
+    .individual-chart-card {
+        max-height: none !important;
+        overflow: visible !important;
+        padding: 0.75rem !important;
+    }
+
+    .individual-chart-card canvas {
+        height: 120px !important;
+        max-height: 120px !important;
+        width: 100% !important;
+    }
+
+    .theme-toggle {
+    background: var(--primary-blue-30);
+    border: none;
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    cursor: pointer !important;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.3s ease;
+    box-shadow: var(--shadow-light);
+    color: white;
+    pointer-events: auto !important;
+    user-select: none;
+    position: relative;
+    z-index: 10;
 }
+    .icon-sun, .icon-moon {
+    font-size: 0.8rem;
+    transition: opacity 0.3s ease;
+}
+    
+}
+
+
 
 /* Pontuação */
 .chart-wrapper-pontuacao {
     position: relative;
     height: 300px;
-    min-height: 200px; /* FIX #4: gráfico menos achatado */
     width: 100%;
     margin-bottom: 2rem;
 }
-
 
 #pontuacao-total-display {
     font-size: 2.5rem;

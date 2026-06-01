@@ -611,11 +611,6 @@ async function renderPontuacao() {
 
 
     const maxPontos = Math.max(0, ...dataAcumulada.map(n => Number(n) || 0));
-    console.log('[pontuacao-chart] Labels:', labels);
-    console.log('[pontuacao-chart] Values:', dataAcumulada);
-    console.log('[pontuacao-chart] MaxPontos:', maxPontos);
-
-
 
     const ctx = canvasEl.getContext('2d');
     chartInstance = new Chart(ctx, {
@@ -994,11 +989,6 @@ function renderizarMetasCiclicas(dataKey, tarefasSupabase = []) {
     const metasAnuais = tarefasSupabase.length ? (tarefasSupabase || []).filter(t => t.tipo === 'anual') : JSON.parse(localStorage.getItem(STORAGE_KEYS.anual) || '[]');
     metasMensais.forEach(meta => {
         const ehDia = isDiaCicloMensal(meta, dataKey);
-        console.log('[DEBUG renderizarMetasCiclicas] mensal', {
-            dataKey,
-            meta: { texto: meta?.texto, prioridade: meta?.prioridade, dataCriacao: meta?.dataCriacao },
-            isDiaCicloMensal: ehDia
-        });
 
         if (ehDia) {
             metasCiclicas.push({
@@ -1026,12 +1016,6 @@ function renderizarMetasCiclicas(dataKey, tarefasSupabase = []) {
             });
         }
 
-        console.log('[DEBUG renderizarMetasCiclicas] semanal', {
-            dataKey,
-            meta: { titulo: meta?.titulo, prioridade: meta?.prioridade, criada_em: meta?.criada_em },
-            isDiaCicloSemanal: ehDia
-        });
-
         if (ehDia) {
             metasCiclicas.push({
                 ...meta,
@@ -1045,12 +1029,7 @@ function renderizarMetasCiclicas(dataKey, tarefasSupabase = []) {
     // Carregar metas_anual
     metasAnuais.forEach(meta => {
         const ehDia = isDiaCicloAnual(meta, dataKey);
-        console.log('[DEBUG renderizarMetasCiclicas] anual', {
-            dataKey,
-            meta: { texto: meta?.texto, prioridade: meta?.prioridade, dataCriacao: meta?.dataCriacao },
-            isDiaCicloAnual: ehDia
-        });
-
+       
         if (ehDia) {
             metasCiclicas.push({
                 ...meta,
@@ -1064,18 +1043,6 @@ function renderizarMetasCiclicas(dataKey, tarefasSupabase = []) {
         acc[m.tipo] = (acc[m.tipo] || 0) + 1;
         return acc;
     }, {});
-
-    console.log('[DEBUG renderizarMetasCiclicas] retorno', {
-        dataKey,
-        totalCiclicas: metasCiclicas.length,
-        tipos: tiposCount,
-        exemplos: metasCiclicas.slice(0, 10).map(m => ({
-            tipo: m.tipo,
-            texto: m.texto,
-            prioridade: m.prioridade,
-            cyclicTaskId: m.cyclicTaskId
-        }))
-    });
 
     return metasCiclicas;
 }
@@ -1767,11 +1734,9 @@ function atualizarEficienciaModal(modal) {
     let total = 0;
     let conclusas = 0;
 
-    console.log('[DEBUG atualizarEficienciaModal] dataKey', dataKey, 'tarefas', tarefas.length);
 
     // Para debug/observabilidade: listar quantas anuais existem no modal
     const anuaisNoModal = Array.from(tarefas).filter(t => (t.dataset.metaTipo || '') === 'anual');
-    console.log('[DEBUG atualizarEficienciaModal] anuaisNoModal', anuaisNoModal.map(t => t.dataset.taskId));
 
     const metasCiclicasNoDiaCache = renderizarMetasCiclicas(dataKey);
 
@@ -2501,17 +2466,6 @@ function calculateGoalStats(taskId) {
         }
     });
     
-    if (history.length === 0) {
-        console.log(`No data for ${taskId}`);
-        return {
-            eficiencia: 0,
-            maxStreak: 0,
-            totalSim: 0,
-            totalRecords: 0,
-            noData: true
-        };
-    }
-    
     // Sort chronological (oldest first)
     history.sort((a, b) => new Date(a.date) - new Date(b.date));
     
@@ -2543,8 +2497,6 @@ function calculateGoalStats(taskId) {
         noData: false
     };
     
-    console.log(`Stats ${taskId}:`, stats);
-    return stats;
 }
 
 function flipCardToggle(flipCardEl) {
@@ -2760,10 +2712,14 @@ function getDataOrigem() {
     if (ultimoReset !== hoje) {
         Object.keys(STORAGE_KEYS).forEach(key => {
             if (key === 'stats') return;
-
-            const prazoDias = getPrazoDias(key);
+            // Essas metas (metas_diario/metas_semanal/metas_mensal/metas_anual/ciclicas_tarefas_dia)
+            // já foram migradas para o Supabase e não devem ser tocadas no reset diário.
+            if (key === 'diario' || key === 'semanal' || key === 'mensal' || key === 'anual' || key === 'ciclicas') {
+                return;
+            }
 
             const storageKey = STORAGE_KEYS[key];
+
             const rawValue = localStorage.getItem(storageKey);
 
             // Preservar sempre se não for array válido
