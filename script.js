@@ -820,12 +820,37 @@ async function gerarHistoricoPontuacao() {
 
 
 
-function getCalendarData() {
-return JSON.parse(localStorage.getItem(CALENDAR_STORAGE) || '{}');
+async function getCalendarData() {
+    if (!window.userId) return {};
+    
+    const { data, error } = await window.supabaseClient
+        .from('registros')
+        .select('tarefa_id, data, status')
+        .eq('user_id', window.userId);
+    
+    if (error) { console.error(error); return {}; }
+    
+    const resultado = {};
+    data.forEach(r => {
+        if (!resultado[r.data]) resultado[r.data] = {};
+        resultado[r.data][r.tarefa_id] = r.status;
+    });
+    
+    return resultado;
 }
-
-function saveCalendarData(data) {
-    localStorage.setItem(CALENDAR_STORAGE, JSON.stringify(data));
+async function saveCalendarData(tarefa_id, data, status) {
+    if (!window.userId) return;
+    
+    const { error } = await window.supabaseClient
+        .from('registros')
+        .upsert({
+            user_id: window.userId,
+            tarefa_id,
+            data,
+            status
+        }, { onConflict: 'user_id,tarefa_id,data' });
+    
+    if (error) console.error(error);
 }
 
 // NOVA: Função para obter status das tarefas de um dia específico (Supabase)
@@ -1216,7 +1241,7 @@ function isAnualConcluidaDia(dataKey, cyclicTaskId) {
     return tarefasCiclicas[cyclicTaskId] === true;
 }
 
-function renderCalendar() {
+async function renderCalendar() {
     const grid = document.getElementById('calendar-grid');
 
     const monthYearEl = document.getElementById('calendar-month-year');
@@ -1229,7 +1254,16 @@ function renderCalendar() {
     const primeiroDia = new Date(currentYear, currentMonth, 1).getDay();
     const diasNoMes = new Date(currentYear, currentMonth + 1, 0).getDate();
     const hoje = new Date();
-    const calendarData = getCalendarData();
+    // Buscar eficiência do Supabase
+    const { data: eficienciaDados } = await window.supabaseClient
+    .from('eficiencia_diaria')
+    .select('data, eficiencia')
+    .eq('user_id', window.userId);
+
+    const calendarData = {};
+    (eficienciaDados || []).forEach(r => {
+    calendarData[r.data] = r.eficiencia;
+    });
 
     // Dias vazios antes
     for (let i = 0; i < primeiroDia; i++) {
@@ -1344,6 +1378,15 @@ modal.querySelector('#btn-cancelar-dia').addEventListener('click', () => modal.c
                         .eq('data', currentDataKey);
                     if (delErr) throw delErr;
                 }
+                    // Apagar da eficiencia_diaria também
+        if (currentDataKey && window.userId) {
+                await window.supabaseClient
+                .from('eficiencia_diaria')
+                .delete()
+                .eq('user_id', window.userId)
+                .eq('data', currentDataKey);
+             }
+                
             } catch (e) {
                 console.error('Erro ao limpar registros (Supabase):', e);
             }
@@ -1372,12 +1415,12 @@ modal.querySelector('#btn-cancelar-dia').addEventListener('click', () => modal.c
 
             // Atualiza UI
             modal.classList.remove('active');
-            renderCalendar();
+            await renderCalendar();
             renderEstatisticas(); // Atualiza gráficos automaticamente (inclui individual charts)
         });
         
 // Confirmar - salva o status das tarefas E atualiza os gráficos
-        modal.querySelector('#btn-confirmar-dia').addEventListener('click', () => {
+        modal.querySelector('#btn-confirmar-dia').addEventListener('click', async () => {
             const currentDataKey = modal.dataset.currentDataKey;
             const tarefasContainer = modal.querySelector('.tarefas-lista');
             const tarefas = tarefasContainer.querySelectorAll('.tarefa-item');
@@ -1424,18 +1467,24 @@ modal.querySelector('#btn-cancelar-dia').addEventListener('click', () => modal.c
             const eficiencia = total > 0 ? Math.round((conclusas / total) * 100) : 0;
             const data = getCalendarData();
             if (currentDataKey) {
-                data[currentDataKey] = eficiencia;
-                saveCalendarData(data);
-            }
+                await window.supabaseClient
+                .from('eficiencia_diaria')
+                .upsert({
+                user_id: window.userId,
+                data: currentDataKey,
+                eficiencia: eficiencia
+        }, { onConflict: 'user_id,data' });
+    }
             
             // ✅ FINAL: Processar conquistas anuais pendentes APENAS se final=true no CONFIRMAR
-            if (window.pendingAnnualStates) {
+            if (window.pendingAnnualStates) {''
                 Object.entries(window.pendingAnnualStates).forEach(([cyclicTaskId, isFinalCheck]) => {
                     if (isFinalCheck) {
                         const todasCiclicas = renderizarMetasCiclicas(currentDataKey);
                         const meta = todasCiclicas.find(m => m.cyclicTaskId === cyclicTaskId);
                         if (meta) {
-                            salvarHallFamaConquista(meta, currentDataKey);
+                            salvarHallFamaConquista(meta, currentDataKey);    
+                            delete window.pendingAnnualStates[cyclicTaskId];        
                         }
                     }
                 });
@@ -2370,81 +2419,26 @@ function getGoalHistory(texto, prioridade, view) {
  * @param {object} meta - meta object for cyclicId reconstruction
  * @returns {object} {valor: 0/1, temRegistro: bool, explicitamenteNao: bool}
  */
-function getTaskStatus(dataKey, simpleTaskId, isWeekly = false, meta = null) {
-    // 1. Check daily storage first (always)
-    const tarefasDia = JSON.parse(localStorage.getItem('calendario_tarefas_dia') || '{}');
-
-    // Para cíclicas (semanal/mensal/anual), o app pode ter salvo no calendário_tarefas_dia
-    // usando o cyclicTaskId (ex: cyc_texto-Prioridade_YYYYMMDD). Então tentamos ambos.
-    let status = tarefasDia[dataKey]?.[simpleTaskId];
-
-    if (isWeekly && meta) {
-        const cyclicTaskId = getCyclicTaskId(meta);
-        if (tarefasDia[dataKey] && Object.prototype.hasOwnProperty.call(tarefasDia[dataKey], cyclicTaskId)) {
-            status = tarefasDia[dataKey][cyclicTaskId];
-        }
-    }
-
-
-    // DEBUG: verificar keys existentes
-    // (Evita spam: só loga quando houver meta e o cálculo for semanal/cíclico)
-    try {
-        if (isWeekly && meta) {
-            const cyclicTaskId = getCyclicTaskId(meta);
-            const tarefasCiclicas = JSON.parse(localStorage.getItem('ciclicas_tarefas_dia') || '{}');
-            const hasSimple = tarefasDia?.[dataKey]?.hasOwnProperty?.(simpleTaskId);
-            const hasCyclic = tarefasCiclicas?.[dataKey]?.hasOwnProperty?.(cyclicTaskId);
-            if (hasSimple || hasCyclic) {
-                console.warn('[DEBUG getTaskStatus]', {
-                    dataKey,
-                    simpleTaskId,
-                    cyclicTaskId,
-                    hasSimple,
-                    hasCyclic,
-                    statusSimple: tarefasDia?.[dataKey]?.[simpleTaskId],
-                    statusCyclic: tarefasCiclicas?.[dataKey]?.[cyclicTaskId]
-                });
-            } else {
-                // DEBUG: log quando NÃO acha nada, para confirmar se a função está sendo chamada
-                console.warn('[DEBUG getTaskStatus - no records]', {
-                    dataKey,
-                    simpleTaskId,
-                    cyclicTaskId,
-                    hasSimple,
-                    hasCyclic
-                });
-            }
-
-        }
-    } catch (e) {
-        console.error('[DEBUG getTaskStatus] error', e);
-    }
-
-    if (status !== undefined) {
-        return {
-            valor: status === true ? 1 : 0,
-            temRegistro: true,
-            explicitamenteNao: status === false
-        };
-    }
-
-    if (isWeekly && meta) {
-        // 2. Fallback: reconstruct cyclic ID and check cyclic storage
-        //    IMPORTANTE: as metas semanal/mensal/anual são salvas em ciclicas_tarefas_dia
-        const cyclicTaskId = getCyclicTaskId(meta);
-        const tarefasCiclicas = JSON.parse(localStorage.getItem('ciclicas_tarefas_dia') || '{}');
-        status = tarefasCiclicas[dataKey]?.[cyclicTaskId];
-        if (status !== undefined) {
-            return {
-                valor: status === true ? 1 : 0,
-                temRegistro: true,
-                explicitamenteNao: status === false
-            };
-        }
-    }
-
-    // 3. No record
-    return { valor: 0, temRegistro: false, explicitamenteNao: false };
+async function getTaskStatus(dataKey, simpleTaskId, isWeekly = false, meta = null) {
+    if (!window.userId) return { valor: 0, tendoErro: false, explicitamenteFalso: false };
+    
+    const { data, error } = await window.supabaseClient
+        .from('registros')
+        .select('status')
+        .eq('user_id', window.userId)
+        .eq('tarefa_id', simpleTaskId)
+        .eq('data', dataKey)
+        .maybeSingle();
+    
+    if (error) console.error(error);
+    
+    const status = data?.status ?? undefined;
+    
+    return {
+        valor: status === true ? 1 : 0,
+        tendoErro: false,
+        explicitamenteFalso: status === false
+    };
 }
 
 
@@ -2890,11 +2884,9 @@ function ensureSupabaseReady(){
             // Após signUp, tentar pegar a sessão (depende do projeto: pode exigir confirmação).
             const { data: { session } } = await window.supabaseClient.auth.getSession();
             if (!session) {
-                // Mesmo sem sessão, usuário pode estar em fluxo de confirmação.
-                mostrarErro('Cadastro realizado. Verifique seu email para confirmar (se necessário).');
+                mostrarErro('Cadastro realizado! Verifique seu email para confirmar a conta.');
                 return;
-            }
-
+}
             window.userId = session.user.id;
             await window.supabaseClient
                 .from('perfil_usuario')
@@ -2935,6 +2927,9 @@ function ensureSupabaseReady(){
         const { data: { session } } = await window.supabaseClient.auth.getSession();
         if (session) {
             window.userId = session.user.id;
+            currentMonth = new Date().getMonth();
+            currentYear = new Date().getFullYear();
+            await renderCalendar();
             ocultarTelaLogin();
             // garante logout visível e inicializa apenas quando logado
             await iniciarApp();
