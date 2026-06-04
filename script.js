@@ -5,8 +5,31 @@ if (!window.supabaseClient) {
   const SUPABASE_URL = 'https://yxavkjumdojxhlyxslgl.supabase.co';
   const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inl4YXZranVtZG9qeGhseXhzbGdsIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzg2MTY3ODYsImV4cCI6MjA5NDE5Mjc4Nn0.7Dydnonx88tEIpRDodvZ37yTB61XjJmB_O_1njWJi5Y'; 
   
-  window.supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+ window.supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_KEY, {
+    auth: {
+        detectSessionInUrl: true,
+        persistSession: true,
+        storageKey: 'sb-session',
+        storage: {
+            getItem: (key) => {
+                try { return localStorage.getItem(key); } catch { return null; }
+            },
+            setItem: (key, value) => {
+                try { localStorage.setItem(key, value); } catch {}
+            },
+            removeItem: (key) => {
+                try { localStorage.removeItem(key); } catch {}
+            }
+        }
+    }
+});
 }
+if (window.location.hash.includes('access_token')) {
+    window.supabaseClient.auth.getSession().then(() => {
+        window.history.replaceState(null, '', window.location.pathname);
+    })
+}
+
 document.addEventListener('DOMContentLoaded', async function() {
     // Theme init (garante que CSS aplica antes de qualquer render):
     try {
@@ -1243,7 +1266,6 @@ function isAnualConcluidaDia(dataKey, cyclicTaskId) {
 
 async function renderCalendar() {
     const grid = document.getElementById('calendar-grid');
-
     const monthYearEl = document.getElementById('calendar-month-year');
     if (!grid || !monthYearEl) return;
 
@@ -1253,16 +1275,20 @@ async function renderCalendar() {
     grid.innerHTML = '';
     const primeiroDia = new Date(currentYear, currentMonth, 1).getDay();
     const diasNoMes = new Date(currentYear, currentMonth + 1, 0).getDate();
+
+    // Declarado uma única vez, fora do loop
     const hoje = new Date();
+    const hojeZerado = new Date(hoje.getFullYear(), hoje.getMonth(), hoje.getDate());
+
     // Buscar eficiência do Supabase
     const { data: eficienciaDados } = await window.supabaseClient
-    .from('eficiencia_diaria')
-    .select('data, eficiencia')
-    .eq('user_id', window.userId);
+        .from('eficiencia_diaria')
+        .select('data, eficiencia')
+        .eq('user_id', window.userId);
 
     const calendarData = {};
     (eficienciaDados || []).forEach(r => {
-    calendarData[r.data] = r.eficiencia;
+        calendarData[r.data] = r.eficiencia;
     });
 
     // Dias vazios antes
@@ -1298,8 +1324,8 @@ async function renderCalendar() {
             dayEl.classList.add('today');
         }
 
-        // Clique abre modal eficiência
-        const isFuturo = new Date(currentYear, currentMonth, dia) > hoje;
+        // Usa hojeZerado para comparação justa sem hora
+        const isFuturo = new Date(currentYear, currentMonth, dia) > hojeZerado;
         if (!isFuturo) {
             dayEl.addEventListener('click', () => abrirModalEficiencia(dataKey, dia));
         } else {
@@ -1364,60 +1390,54 @@ async function abrirModalEficiencia(dataKey, dia) {
 modal.querySelector('#btn-cancelar-dia').addEventListener('click', () => modal.classList.remove('active'));
         modal.addEventListener('click', (e) => e.target === modal && modal.classList.remove('active'));
         
-// Limpar - remove a eficiência do dia E as tarefas individuais
-        modal.querySelector('#btn-limpar-dia').addEventListener('click', async () => {
-            const currentDataKey = modal.dataset.currentDataKey;
+modal.querySelector('#btn-limpar-dia').addEventListener('click', async () => {
+    const currentDataKey = modal.dataset.currentDataKey;
 
-            try {
-                // 0) Remove registros do dia em Supabase (fonte de verdade)
-                if (currentDataKey && window.userId) {
-                    const { error: delErr } = await window.supabaseClient
-                        .from('registros')
-                        .delete()
-                        .eq('user_id', window.userId)
-                        .eq('data', currentDataKey);
-                    if (delErr) throw delErr;
-                }
-                    // Apagar da eficiencia_diaria também
+    try {
         if (currentDataKey && window.userId) {
-                await window.supabaseClient
+            // Remove registros do dia
+            const { error: delRegistros } = await window.supabaseClient
+                .from('registros')
+                .delete()
+                .eq('user_id', window.userId)
+                .eq('data', currentDataKey);
+            if (delRegistros) throw delRegistros;
+
+            // Remove eficiência do dia
+            const { error: delEficiencia } = await window.supabaseClient
                 .from('eficiencia_diaria')
                 .delete()
                 .eq('user_id', window.userId)
                 .eq('data', currentDataKey);
-             }
-                
-            } catch (e) {
-                console.error('Erro ao limpar registros (Supabase):', e);
-            }
+            if (delEficiencia) throw delEficiencia;
+        }
+    } catch (e) {
+        console.error('Erro ao limpar registros (Supabase):', e);
+    }
 
-            // 1. Remove eficiência do dia em calendario_dias
-            const data = getCalendarData();
-            // CORREÇÃO: Verificar explicitamente !== undefined para lidar com eficiência 0%
-            if (currentDataKey && data[currentDataKey] !== undefined) {
-                delete data[currentDataKey];
-                saveCalendarData(data);
-            }
+    // Remove do localStorage (legado)
+    const data = getCalendarData();
+    if (currentDataKey && data[currentDataKey] !== undefined) {
+        delete data[currentDataKey];
+        saveCalendarData(data);
+    }
 
-            // 2. Remove daily tasks deste dia
-            const tarefasDia = JSON.parse(localStorage.getItem(CALENDAR_TAREFAS) || '{}');
-            if (tarefasDia[currentDataKey]) {
-                delete tarefasDia[currentDataKey];
-                localStorage.setItem(CALENDAR_TAREFAS, JSON.stringify(tarefasDia));
-            }
+    const tarefasDia = JSON.parse(localStorage.getItem(CALENDAR_TAREFAS) || '{}');
+    if (tarefasDia[currentDataKey]) {
+        delete tarefasDia[currentDataKey];
+        localStorage.setItem(CALENDAR_TAREFAS, JSON.stringify(tarefasDia));
+    }
 
-            // 3. Remove cyclic tasks deste dia
-            const tarefasCiclicas = JSON.parse(localStorage.getItem(CICLICAS_STORAGE) || '{}');
-            if (tarefasCiclicas[currentDataKey]) {
-                delete tarefasCiclicas[currentDataKey];
-                localStorage.setItem(CICLICAS_STORAGE, JSON.stringify(tarefasCiclicas));
-            }
+    const tarefasCiclicas = JSON.parse(localStorage.getItem(CICLICAS_STORAGE) || '{}');
+    if (tarefasCiclicas[currentDataKey]) {
+        delete tarefasCiclicas[currentDataKey];
+        localStorage.setItem(CICLICAS_STORAGE, JSON.stringify(tarefasCiclicas));
+    }
 
-            // Atualiza UI
-            modal.classList.remove('active');
-            await renderCalendar();
-            renderEstatisticas(); // Atualiza gráficos automaticamente (inclui individual charts)
-        });
+    modal.classList.remove('active');
+    await renderCalendar();
+    renderEstatisticas();
+});
         
 // Confirmar - salva o status das tarefas E atualiza os gráficos
         modal.querySelector('#btn-confirmar-dia').addEventListener('click', async () => {
@@ -1465,16 +1485,42 @@ modal.querySelector('#btn-cancelar-dia').addEventListener('click', () => modal.c
             });
             
             const eficiencia = total > 0 ? Math.round((conclusas / total) * 100) : 0;
-            const data = getCalendarData();
-            if (currentDataKey) {
-                await window.supabaseClient
-                .from('eficiencia_diaria')
-                .upsert({
+            const userId = window.userId;
+if (currentDataKey && userId) {
+    // Tenta buscar sessão atual caso window.userId esteja desatualizado
+    if (!userId) {
+        const { data: { session } } = await window.supabaseClient.auth.getSession();
+        if (session) window.userId = session.user.id;
+    }
+    const { error: upsertErr } = await window.supabaseClient
+        .from('eficiencia_diaria')
+        .upsert(
+            {
                 user_id: window.userId,
                 data: currentDataKey,
                 eficiencia: eficiencia
-        }, { onConflict: 'user_id,data' });
+            },
+            { onConflict: 'user_id,data', ignoreDuplicates: false }
+        );
+    if (upsertErr) {
+        console.error('Erro ao salvar eficiência:', upsertErr);
+        // Tenta reautenticar e repetir
+        const { data: { session } } = await window.supabaseClient.auth.getSession();
+        if (session) {
+            window.userId = session.user.id;
+            await window.supabaseClient
+                .from('eficiencia_diaria')
+                .upsert(
+                    {
+                        user_id: window.userId,
+                        data: currentDataKey,
+                        eficiencia: eficiencia
+                    },
+                    { onConflict: 'user_id,data', ignoreDuplicates: false }
+                );
+        }
     }
+}
             
             // ✅ FINAL: Processar conquistas anuais pendentes APENAS se final=true no CONFIRMAR
             if (window.pendingAnnualStates) {''
@@ -1493,7 +1539,7 @@ modal.querySelector('#btn-cancelar-dia').addEventListener('click', () => modal.c
             }
             
             modal.classList.remove('active');
-            renderCalendar();
+            await renderCalendar();
             renderEstatisticas(); // Atualiza gráficos automaticamente (inclui individual charts)
         });
     }
@@ -2864,7 +2910,10 @@ function ensureSupabaseReady(){
             const { data: { session } } = await window.supabaseClient.auth.getSession();
             if (!session) throw new Error('Sessão não encontrada após login.');
             window.userId = session.user.id;
+            currentMonth = new Date().getMonth();
+            currentYear = new Date().getFullYear();
             ocultarTelaLogin();
+            await renderCalendar();
             await iniciarApp();
         } catch (err) {
             mostrarErro(err?.message || 'Falha ao entrar.');
